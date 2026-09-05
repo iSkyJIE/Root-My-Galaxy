@@ -7,6 +7,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 import org.json.JSONObject
 
 data class VerifiedPayloads(
@@ -17,13 +18,38 @@ data class VerifiedPayloads(
 
 class PayloadRepository(private val context: Context) {
     fun loadTargets(): List<TargetProfile> {
-        val commit = resolveMainCommit()
-        val manifestBytes = downloadBytes(rawUrl(commit, "support/targets-v3.json"), MAX_MANIFEST_BYTES)
-        return SupportManifest.parse(manifestBytes).targets.map { profile -> profile.copy(
-            exploit = profile.exploit.copy(url = pinArtifactUrl(profile.exploit.url, commit)),
-            kernelSu = profile.kernelSu.copy(url = pinArtifactUrl(profile.kernelSu.url, commit)),
-        ) }
+        val bundled = bundledTargets()
+        val remote = runCatching {
+            val commit = resolveMainCommit()
+            val manifestBytes = downloadBytes(rawUrl(commit, "support/targets-v3.json"), MAX_MANIFEST_BYTES)
+            SupportManifest.parse(manifestBytes).targets.map { profile -> profile.copy(
+                exploit = profile.exploit.copy(url = pinArtifactUrl(profile.exploit.url, commit)),
+                kernelSu = profile.kernelSu.copy(url = pinArtifactUrl(profile.kernelSu.url, commit)),
+            ) }
+        }.getOrDefault(emptyList())
+        return bundled + remote.filterNot { remoteProfile ->
+            bundled.any { it.profileId == remoteProfile.profileId }
+        }
     }
+
+    fun bundledTargets(): List<TargetProfile> = listOf(
+        TargetProfile(
+            profileId = "q7q-F966USQU9BZDN",
+            displayName = "Galaxy Z Fold 7 | Kernel 6.6.98",
+            models = setOf("SM-F966U", "SM-F966U1"),
+            kernelVersions = setOf("6.6.98"),
+            exploit = RemoteArtifact(
+                url = "$ASSET_PREFIX${BUNDLED_PAYLOAD_PATH}/cve-2026-43499-app.so",
+                size = 126_352,
+                sha256 = "92F1959C4944FAE2825F094715B9F89E4B06B5AE141B1F6A3F4CB59F1AB84904",
+            ),
+            kernelSu = RemoteArtifact(
+                url = "$ASSET_PREFIX${BUNDLED_PAYLOAD_PATH}/ksud-s25u-kdp",
+                size = 6_407_096,
+                sha256 = "FA3EDCC7D168637394877B30CB1F909D762DDA788EC14051F4AE79EDD6562D63",
+            ),
+        ),
+    )
 
     fun resolveTarget(snapshot: DeviceSnapshot): TargetProfile = loadTargets()
         .firstOrNull { it.matches(snapshot) }
@@ -60,34 +86,76 @@ class PayloadRepository(private val context: Context) {
     ): File {
         onProgress(context.getString(R.string.repo_downloading, label))
         val temporary = File(destination.parentFile, "${destination.name}.part")
-        val connection = open(artifact.url)
-        require(connection.contentLengthLong == -1L || connection.contentLengthLong == artifact.size) {
-            context.getString(R.string.repo_size_mismatch, label)
-        }
-        var total = 0L
-        connection.inputStream.use { input ->
-            FileOutputStream(temporary).use { output ->
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                while (true) {
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    total += count
-                    require(total <= artifact.size) {
-                        context.getString(R.string.repo_size_exceeded, label)
+        if (artifact.url.startsWith(ASSET_PREFIX)) {
+            val assetPath = artifact.url.removePrefix(ASSET_PREFIX)
+            context.assets.open(assetPath).use { input ->
+                FileOutputStream(temporary).use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
                     }
-                    output.write(buffer, 0, count)
+                    output.fd.sync()
                 }
-                output.fd.sync()
+            }
+        } else {
+            val connection = open(artifact.url)
+            try {
+                require(connection.contentLengthLong == -1L || connection.contentLengthLong == artifact.size) {
+                    context.getString(R.string.repo_size_mismatch, label)
+                }
+                var total = 0L
+                connection.inputStream.use { input ->
+                    FileOutputStream(temporary).use { output ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            require(total <= artifact.size) {
+                                context.getString(R.string.repo_size_exceeded, label)
+                            }
+                            output.write(buffer, 0, count)
+                        }
+                        output.fd.sync()
+                    }
+                }
+                require(total == artifact.size) {
+                    context.getString(R.string.repo_incomplete, label)
+                }
+            } finally {
+                connection.disconnect()
             }
         }
-        connection.disconnect()
-        require(total == artifact.size) { context.getString(R.string.repo_incomplete, label) }
+        require(temporary.length() == artifact.size) {
+            context.getString(R.string.repo_size_mismatch, label)
+        }
+        artifact.sha256?.let { expected ->
+            val actual = temporary.sha256()
+            require(actual.equals(expected, ignoreCase = true)) {
+                context.getString(R.string.repo_hash_mismatch, label)
+            }
+        }
         if (destination.exists()) destination.delete()
         require(temporary.renameTo(destination)) {
             context.getString(R.string.repo_finalize_failed, label)
         }
         onProgress(context.getString(R.string.repo_verified, label))
         return destination
+    }
+
+    private fun File.sha256(): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        inputStream().use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     private fun resolveMainCommit(): String {
@@ -141,6 +209,8 @@ class PayloadRepository(private val context: Context) {
         private const val RAW_REPOSITORY =
             "https://raw.githubusercontent.com/BuSung-dev/Root-My-Galaxy-Payloads"
         private const val MUTABLE_RAW_PREFIX = "$RAW_REPOSITORY/main/"
+        private const val ASSET_PREFIX = "asset://"
+        private const val BUNDLED_PAYLOAD_PATH = "payloads/q7q-F966USQU9BZDN"
         private const val MAX_COMMIT_RESPONSE_BYTES = 16 * 1024
         private const val MAX_MANIFEST_BYTES = 256 * 1024
     }

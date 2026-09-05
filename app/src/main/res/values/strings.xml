@@ -126,6 +126,7 @@
     <string name="repo_incomplete">%1$s download is incomplete</string>
     <string name="repo_finalize_failed">Unable to finalize the %1$s file</string>
     <string name="repo_verified">%1$s verified</string>
+    <string name="repo_hash_mismatch">%1$s SHA-256 does not match the expected hash</string>
     <string name="repo_commit_invalid">GitHub returned an invalid commit SHA</string>
     <string name="repo_url_invalid">The artifact repository is not allowed</string>
     <string name="repo_response_too_large">The response exceeded its size limit</string>

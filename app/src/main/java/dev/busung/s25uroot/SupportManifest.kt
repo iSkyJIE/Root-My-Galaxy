@@ -6,6 +6,7 @@ import org.json.JSONObject
 data class RemoteArtifact(
     val url: String,
     val size: Long,
+    val sha256: String? = null,
 )
 
 data class TargetProfile(
