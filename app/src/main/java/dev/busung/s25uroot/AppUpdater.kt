@@ -18,11 +18,11 @@ data class UpdateInfo(
     val releaseUrl: String,
 )
 
-const val ROOT_MY_GALAXY_URL = "https://github.com/BuSung-dev/Root-My-Galaxy"
+const val ROOT_MY_GALAXY_URL = "https://github.com/iSkyJIE/Root-My-Galaxy"
 
 object AppUpdater {
 
-    private const val GITHUB_API = "https://api.github.com/repos/BuSung-dev/Root-My-Galaxy"
+    private const val GITHUB_API = "https://api.github.com/repos/iSkyJIE/Root-My-Galaxy"
     private const val RELEASES_PAGE = "$ROOT_MY_GALAXY_URL/releases/latest"
 
     suspend fun fetchLatestRelease(): UpdateInfo? = withContext(Dispatchers.IO) {
@@ -63,8 +63,23 @@ object AppUpdater {
         }
     }
 
-    fun isUpdateAvailable(latestVersion: String, currentVersion: String): Boolean =
-        latestVersion.isNotEmpty() && latestVersion != currentVersion
+    fun isUpdateAvailable(latestVersion: String, currentVersion: String): Boolean {
+        val latest = numericVersion(latestVersion)
+        val current = numericVersion(currentVersion)
+        if (latest.isEmpty() || current.isEmpty()) {
+            return latestVersion.isNotEmpty() && latestVersion != currentVersion
+        }
+        val length = maxOf(latest.size, current.size)
+        for (index in 0 until length) {
+            val left = latest.getOrElse(index) { 0 }
+            val right = current.getOrElse(index) { 0 }
+            if (left != right) return left > right
+        }
+        return false
+    }
+
+    private fun numericVersion(version: String): List<Int> =
+        version.substringBefore('-').split('.').mapNotNull { it.toIntOrNull() }
 
     suspend fun downloadApk(
         context: Context,
