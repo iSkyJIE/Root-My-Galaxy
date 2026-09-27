@@ -98,6 +98,12 @@ class InstallActivity : ComponentActivity() {
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val selectionId = intent.getStringExtra(EXTRA_PROFILE_ID)
+        // The universal root, asked for as one extra on this screen rather than as a second screen beside
+        // it: it is a run with the same four steps and the same log, and the whole point of a shared run
+        // screen is that a person learns one of them. Taken off the intent like the request below, because
+        // a run is not something to repeat because the screen was turned.
+        val universal = savedInstanceState == null && intent.getBooleanExtra(EXTRA_UNIVERSAL, false)
+        intent.removeExtra(EXTRA_UNIVERSAL)
         // Taken off the intent for the same reason the install request is, and read once: a tap on a run
         // notification names the run it was about, and what this screen can do with that name does not
         // change while it is open.
@@ -159,9 +165,10 @@ class InstallActivity : ComponentActivity() {
                     startActivity(runRecordIntent(this@InstallActivity, wanted))
                     finish()
                 }
-                LaunchedEffect(startInstall, selectionId, answer) {
+                LaunchedEffect(startInstall, universal, selectionId, answer) {
                     when {
                         answer != null -> startAnsweredRun(answer, selectionId)
+                        universal -> installViewModel.startUniversalRun()
                         startInstall -> installViewModel.install(selectionId)
                     }
                 }
@@ -253,12 +260,36 @@ class InstallActivity : ComponentActivity() {
         )
     }
 
+    /**
+     * A launch into an instance that is already open, which is how a second tap on the card arrives.
+     *
+     * `onCreate` reads the extra once, and an activity brought back to the front is not created again - so
+     * without this, tapping the universal root on a phone where the install screen was already in the task
+     * opened the *regular* run screen with the payload flow's steps and its probe, and nothing said why. The
+     * install request avoids the same trap with a consumed token; this extra is simpler and only ever means
+     * "start the universal root", so it is read here as well and removed.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (!intent.getBooleanExtra(EXTRA_UNIVERSAL, false)) return
+        intent.removeExtra(EXTRA_UNIVERSAL)
+        installViewModel.startUniversalRun()
+    }
+
     companion object {
         const val EXTRA_INSTALL_REQUEST_ID = "install_request_id"
         const val EXTRA_PROFILE_ID = "profile_id"
 
         /** One of [RunAnswer]'s extras: what a boot notification's answer asked for. */
         const val EXTRA_RUN_ANSWER = "run_answer"
+
+        /**
+         * Asks this screen for the universal root instead of a payload run.
+         *
+         * One boolean and no other state: the run needs nothing from the app that it cannot read itself, and
+         * a screen opened with this set is the same screen - same steps, same bar, same Stop.
+         */
+        const val EXTRA_UNIVERSAL = "universal_root"
     }
 }
 
@@ -280,6 +311,26 @@ internal val installerSteps = listOf(
     // what the manager row is drawn with, and this step is the one that loads KernelSU and leaves it
     // answering.
     InstallerStep(R.string.step_ksu_title, R.string.step_ksu_detail, Icons.Rounded.VerifiedUser),
+)
+
+/**
+ * The same four steps, worded for the run that fetches nothing.
+ *
+ * Only the two steps whose payload-run text would be wrong are changed: the check is the same check, and the
+ * last step is the same load. `Download` is the one that cannot stand - nothing is downloaded, the daemon
+ * ships in this APK - and `Kernel exploit` says "Get temporary root" on a path whose whole point is that no
+ * temporary root is involved. A step list that describes a different run than the one happening is worse
+ * than no step list, because it reads as the run being further along than it is.
+ */
+internal val universalInstallerSteps = listOf(
+    InstallerStep(R.string.step_support_title, R.string.step_support_detail_universal, Icons.Rounded.FactCheck),
+    InstallerStep(
+        R.string.step_daemon_title,
+        R.string.step_daemon_detail,
+        Icons.Rounded.CloudDownload,
+    ),
+    InstallerStep(R.string.step_exploit_title, R.string.step_exploit_detail_universal, Icons.Rounded.Memory),
+    InstallerStep(R.string.step_ksu_title, R.string.step_ksu_detail_universal, Icons.Rounded.VerifiedUser),
 )
 
 @Composable
@@ -515,6 +566,7 @@ private fun InstallScreen(
                 phase = installState.phase,
                 failure = installState.failure,
                 stoppedAt = installState.stoppedAt,
+                universal = installState.universal,
             )
             InstallerLog(
                 output = installState.log,
@@ -901,6 +953,15 @@ private fun InstallerSteps(
     phase: InstallPhase,
     failure: RunFailure?,
     stoppedAt: RunStage? = null,
+    /**
+     * Whether the run these steps describe is the universal root.
+     *
+     * The four rows are the same four steps either way, so the list is picked here rather than the screen
+     * being forked: what changes is only the wording of a step whose payload-run text would be a lie on this
+     * path - "Download / Load the support list" describes a run that fetches a payload, and this one fetches
+     * nothing at all.
+     */
+    universal: Boolean = false,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -913,7 +974,7 @@ private fun InstallerSteps(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            installerSteps.forEachIndexed { index, step ->
+            (if (universal) universalInstallerSteps else installerSteps).forEachIndexed { index, step ->
                 val stepState = installerStepState(phase, index, failure?.stage ?: stoppedAt)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

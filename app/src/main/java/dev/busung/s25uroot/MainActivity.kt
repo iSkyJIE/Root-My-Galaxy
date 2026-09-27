@@ -1788,6 +1788,9 @@ private fun OverviewPage(
             }
         }
         item { InstallStatusCard(installState, onInstall) }
+        // Under the install card and deliberately its own thing rather than a mode of it: that card's run
+        // needs the system-uid helper, and this one needs nothing installed at all. See [UniversalRootCard].
+        item { UniversalRootCard() }
         // Above the readiness card, because it is about something that already happened rather than
         // something to check, and it is the only account of a restart the user asked for: the dialog
         // that started it could only say the request was made.

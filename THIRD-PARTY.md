@@ -41,6 +41,32 @@ That is also the whole reason `DmcGate.kt` exists: the switch is the app's, the 
 (the vault only answers to a system-uid process), and the point in the boot where the write has to
 happen is a point where the app cannot run at all.
 
+## DFRoot — https://github.com/diabl0w/DFRoot
+
+No `LICENSE`, no `NOTICE`, no SPDX header in any of the files below: all rights reserved by default. Taken
+for the same reason as DFReroot above — the mechanism is the point — and it is the chain that roots a phone
+from an **ordinary app**, with no system-uid helper, no `packages.xml` inject and no first temporary root.
+
+| Here | There | State |
+|---|---|---|
+| `app/src/main/cpp/dfroot/exp.c` | `app/src/main/jni/exp.c` | Verbatim except two things: the JNI entry is renamed for our class, and `JNI_OnLoad` is replaced by a reporter resolved from the object it was handed |
+| `app/src/main/cpp/dfroot/{libc.S,libcxx.S,elf_parser.c,splicehelper.c,include.inc,logging.h,aes256.h,hmac_sha256.h,splicehelper}` | `app/src/main/jni/…` | Verbatim |
+| `app/src/main/cpp/dfroot/ko/dirtyfrag-android*.ko` | `app/src/main/jni/ko/…` | Bytes, unchanged |
+| `app/src/main/cpp/dfroot/CMakeLists.txt` | `app/src/main/jni/CMakeLists.txt` | Build paths rewritten for a subdirectory; the two custom steps and the `.incbin` layout are theirs |
+| `app/src/main/assets/dfroot-ksud` | `app/src/main/assets/ksud` | **Bytes, unchanged** — 5,998,608 bytes |
+| `UniversalRoot.kt`, `UniversalRootRun.kt`, `UniversalRootUi.kt` | — | **Ours.** The `IpSecManager` driver is a rewrite of their `MainActivity`/`BootReceiver`: the same calls in the same order, but written here rather than ported, which is worth knowing when it misbehaves |
+
+**Why the daemon is bundled, against this project's own preference.** Everywhere else, the daemon comes
+from the payload, because a daemon is version-locked to the kernel module that loads it and three managers
+here have their own builds. This chain is the exception, and it was measured rather than assumed: handed
+the payload's daemon — either flavour — it starts and dies in silence, leaving no module and no log line,
+while their `ksud` in the same chain on the same boot logs a complete late-load and roots the phone.
+
+The reason is what the two daemons are built for. Theirs carries its kernel module **inside itself**, which
+is what this invocation asks for: the argv is `late-load --package-name me.weishu.kernelsu --stage-from
+/data/system/ksud --ro-partitions`, with no path to a module anywhere in it. Our payload's daemons are built
+for the regular flow, where the app stages files around them first.
+
 ## LSPromise — https://github.com/LSPosed/LSPromise
 
 Also no license. One file, and it is the JNI bridge whose package name cannot change: `exp.c` registers

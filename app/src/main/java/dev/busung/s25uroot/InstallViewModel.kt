@@ -90,6 +90,14 @@ data class InstallUiState(
      * it is, and the run that follows either goes through Shizuku or says it is not to.
      */
     val transportPrompt: TransportPrompt? = null,
+    /**
+     * Whether this run is the universal root rather than a payload run.
+     *
+     * Carried in the state because the screen draws the steps from it: the same four rows either way, and the
+     * wording of two of them changes - see `universalInstallerSteps`. It is a field of the run rather than a
+     * second screen so the bar, the log, the Stop button and the failure handling are the same ones.
+     */
+    val universal: Boolean = false,
 ) {
     /**
      * Whether a run is under way, which is not the same question as whether the app is working.
@@ -463,6 +471,118 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
     ) {
         install(selectionId, unattended, payloadOffline, preferAttemptedPayload, withoutShizuku)
         installJob?.join()
+    }
+
+    /**
+     * The universal root, as a run of this screen rather than a second screen beside it.
+     *
+     * It is the same four steps, the same bar and the same log as a payload run, because it is the same kind
+     * of thing to a person: something is fetched, something is exploited, something is loaded, and the phone
+     * ends up rooted or it does not. What differs is where it starts from — no helper, no Shizuku, no
+     * temporary root — and that is exactly what the steps are there to show.
+     *
+     * The phases are reused rather than invented (`Checking`, `Downloading`, `Exploiting`,
+     * `LoadingKernelSu`), so the screen that draws a payload run draws this one with no change at all: the
+     * step rows, the progress and the Stop button come from the phase the state is in.
+     */
+    fun startUniversalRun() {
+        if (installJob?.isActive == true) return
+        installJob = viewModelScope.launch {
+            startHistory()
+            // After startHistory, which clears it for every run.
+            mutableState.value = mutableState.value.copy(universal = true)
+            // Said out loud, because the four steps look like a payload run's four steps and a person has no
+            // other way to tell which one they are watching.
+            appendLog("[*] Universal root: no helper, no Shizuku, no temporary root")
+
+            // 1. Support check - what this phone is, and whether this boot can be rooted at all.
+            setPhase(InstallPhase.Checking, app.getString(R.string.universal_step_check))
+            val snapshot = runCatching { DeviceSnapshot.current() }.getOrNull()
+            if (snapshot == null) {
+                failUniversal(app.getString(R.string.universal_no_device))
+                return@launch
+            }
+            appendLog("device: ${snapshot.model} (${snapshot.device}), ${snapshot.abi}")
+            appendLog("kernel: ${snapshot.kernelRelease}")
+            appendLog("android: ${snapshot.androidRelease} (sdk ${snapshot.sdk}), page size ${snapshot.pageSize}")
+            if (snapshot.abi != "arm64-v8a") {
+                failUniversal(app.getString(R.string.universal_wrong_abi, snapshot.abi))
+                return@launch
+            }
+            // The exploit's first act arms a marker only a reboot clears, so a second run through an armed
+            // kernel is either a no-op or a second load into a kernel that already has the module.
+            if (UniversalRootRun.alreadyArmed()) {
+                failUniversal(app.getString(R.string.universal_already_armed))
+                return@launch
+            }
+
+            // 2. The daemon. Nothing is downloaded: it ships in this APK, which is the whole reason this path
+            //    works with nothing installed and no network.
+            setPhase(InstallPhase.Downloading, app.getString(R.string.universal_step_daemon))
+            val daemon = runCatching { withContext(Dispatchers.IO) { UniversalRootRun.stageDaemon(app) } }
+                .getOrNull()
+            if (daemon == null) {
+                failUniversal(app.getString(R.string.universal_daemon_failed))
+                return@launch
+            }
+            appendLog("daemon: ${daemon.absolutePath} (${daemon.length()} bytes, shipped in this APK)")
+
+            // 3. The exploit and the module. One call: the chain patches the vendor libraries, loads the
+            //    module and starts the daemon, and reports every step as it goes.
+            setPhase(InstallPhase.Exploiting, app.getString(R.string.universal_step_exploit))
+            val outcome = withContext(Dispatchers.IO) {
+                UniversalRootRun.run(app, daemon, AppPreferences.restartAfterRoot(app)) { line ->
+                    appendLog(line)
+                }
+            }
+            if (outcome is UniversalRootRun.Outcome.Refused) {
+                failUniversal(outcome.because)
+                return@launch
+            }
+            val code = (outcome as UniversalRootRun.Outcome.Ran).code
+            if (code != 0) {
+                failUniversal(UniversalRootRun.describe(code))
+                return@launch
+            }
+
+            // 4. Load KernelSU - and the reading that decides whether this run is a success. The chain's own
+            //    `0` is its account of itself; the kernel is asked separately, because the two have already
+            //    disagreed once on this device and the chain reported success while nothing was loaded.
+            setPhase(InstallPhase.LoadingKernelSu, app.getString(R.string.universal_step_load))
+            // The manager, through the same [ensureManager] the payload flow uses - the only thing that
+            // changes is where the flavour comes from. There is no payload on this path to name a version,
+            // so it asks for the one its daemon is built for: DFRoot's ksud is a `me.weishu.kernelsu` build,
+            // and its argv carries that package name to the phone.
+            ensureManager(KernelSuFlavor.KernelSu, unattended = false)
+            // And the reading. This is the one part that has to differ from the payload flow: that one
+            // verifies through a shell it obtained on the way (Shizuku or the helper), and this path has
+            // none - which is why an app has to be told what it *can* read instead. See
+            // [UniversalRootRun.read]: the kernel is not readable from an app on this device, so the `su`
+            // the daemon installs is the signal that works.
+            val reading = withContext(Dispatchers.IO) { UniversalRootRun.read() }
+            if (reading == UniversalRootRun.Reading.Nothing) {
+                failUniversal(app.getString(R.string.universal_not_live))
+                return@launch
+            }
+            appendLog(UniversalRootRun.describeReading(reading))
+            setPhase(InstallPhase.Installed, app.getString(R.string.universal_installed))
+        }
+    }
+
+    /**
+     * Ends a universal run where its own steps cannot take it further.
+     *
+     * A phase and a sentence rather than a [RunFailure]: the failure type names a *stage of the payload
+     * flow* and a cause in that flow's vocabulary, and this run has neither. What it has is the reason the
+     * chain or the kernel gave, and that is what the screen shows.
+     */
+    private fun failUniversal(reason: String) {
+        appendLog("[x] $reason")
+        mutableState.value = mutableState.value.copy(
+            phase = InstallPhase.Failed,
+            message = reason,
+        )
+        updateHistory { entry -> entry.copy(phase = InstallPhase.Failed) }
     }
 
     /**
@@ -2178,6 +2298,10 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun startHistory() {
+        // Every run starts here, so this is where the universal flag is cleared as well as set: a payload
+        // run that follows one must not inherit its wording, and there is no other line every run passes
+        // through. [startUniversalRun] sets it immediately after this returns.
+        mutableState.value = mutableState.value.copy(universal = false)
         val entry = historyStore.create()
         activeHistoryEntry = entry
         activeRunId = entry.id
