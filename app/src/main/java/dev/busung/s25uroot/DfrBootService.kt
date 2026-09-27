@@ -264,6 +264,10 @@ class DfrBootService : Service() {
             // up carrying is a fact about the payload this app resolved, so the helper's own manager row
             // has to be told it rather than left to guess between three installed managers.
             flavor = AppPreferences.kernelsuFlavor(this),
+            // And the D2 fix's switch - the other of the two moments the helper can be told it. This boot
+            // is starting the helper anyway, so the value it will read on the *next* boot's locked-boot
+            // receiver is set here, and a phone whose owner never opens the app again keeps it.
+            dmcFix = AppPreferences.dmcFix(this),
         )
         if (launch == null) {
             AppLog.warn(AppLogTags.BOOT, "Reroot at boot could not start the helper: no shell answered")

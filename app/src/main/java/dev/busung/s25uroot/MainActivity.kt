@@ -246,6 +246,7 @@ class MainActivity : ComponentActivity() {
     private var payloadSources by mutableStateOf<List<PayloadSource>>(emptyList())
     private var bootRootMode by mutableStateOf(false)
     private var rerootAtBoot by mutableStateOf(false)
+    private var dmcFix by mutableStateOf(false)
     private var armedRetry by mutableStateOf<ArmedRetry?>(null)
 
     /**
@@ -388,6 +389,7 @@ class MainActivity : ComponentActivity() {
         payloadSources = AppPreferences.payloadSources(this)
         bootRootMode = AppPreferences.bootRootMode(this)
         rerootAtBoot = AppPreferences.rerootAtBoot(this)
+        dmcFix = AppPreferences.dmcFix(this)
         armedRetry = readArmedRetry()
         retryPayload = readArmedRetryPayload()
         restartAfterRoot = AppPreferences.restartAfterRoot(this)
@@ -418,6 +420,7 @@ class MainActivity : ComponentActivity() {
                     payloadSources = payloadSources,
                     bootRootMode = bootRootMode,
                     rerootAtBoot = rerootAtBoot,
+                    dmcFix = dmcFix,
                     armedRetry = armedRetry,
                     retryPayload = retryPayload,
                     restartAfterRoot = restartAfterRoot,
@@ -496,6 +499,14 @@ class MainActivity : ComponentActivity() {
                         // after the user turned the setting that asked for it off - and turning this one
                         // on stops the install gate, which is the alternative it just replaced.
                         if (enabled) AutoRootService.stop(this) else DfrBootService.stop(this)
+                    },
+                    // Nothing else moves with the D2 fix's switch: it is not a boot gate, so it neither
+                    // takes the other gate's place nor stops a service. What it becomes is the value the
+                    // helper reads at the next boot - which is why it is passed on every launch that can
+                    // carry it rather than acted on here.
+                    onDmcFixChanged = { enabled ->
+                        AppPreferences.setDmcFix(this, enabled)
+                        dmcFix = enabled
                     },
                     onBootSettleChanged = { seconds ->
                         AppPreferences.setBootSettleSeconds(this, seconds)
@@ -753,6 +764,7 @@ private fun RootApp(
     payloadSources: List<PayloadSource>,
     bootRootMode: Boolean,
     rerootAtBoot: Boolean,
+    dmcFix: Boolean,
     armedRetry: ArmedRetry?,
     retryPayload: CachedPayload?,
     restartAfterRoot: Boolean,
@@ -773,6 +785,7 @@ private fun RootApp(
 	onDisableKsuModulesChanged: (Boolean) -> Unit,
     onLoadKernelSuChanged: (Boolean) -> Unit,
     onRerootAtBootChanged: (Boolean) -> Unit,
+    onDmcFixChanged: (Boolean) -> Unit,
     onManagerVersionChanged: (String) -> Unit,
     onShizukuModeChanged: (Boolean) -> Unit,
     onPayloadSourcesChanged: (List<PayloadSource>) -> Unit,
@@ -1387,6 +1400,7 @@ private fun RootApp(
                             payloadSources = payloadSources,
                             bootRootMode = bootRootMode,
                             rerootAtBoot = rerootAtBoot,
+                            dmcFix = dmcFix,
                             restartAfterRoot = restartAfterRoot,
                             shizukuBootMode = shizukuBootMode,
                             bootSettleSeconds = bootSettleSeconds,
@@ -1404,6 +1418,7 @@ private fun RootApp(
                             onDisableKsuModulesChanged = onDisableKsuModulesChanged,
                             onLoadKernelSuChanged = onLoadKernelSuChanged,
                             onRerootAtBootChanged = onRerootAtBootChanged,
+                            onDmcFixChanged = onDmcFixChanged,
                             onManagerVersionChanged = onManagerVersionChanged,
                             onShizukuModeChanged = onShizukuModeChanged,
                             onPayloadSourcesChanged = onPayloadSourcesChanged,
@@ -4090,6 +4105,7 @@ private fun SettingsPage(
     payloadSources: List<PayloadSource>,
     bootRootMode: Boolean,
     rerootAtBoot: Boolean,
+    dmcFix: Boolean,
     restartAfterRoot: Boolean,
     shizukuBootMode: Boolean,
     bootSettleSeconds: Int,
@@ -4115,6 +4131,7 @@ private fun SettingsPage(
 	onDisableKsuModulesChanged: (Boolean) -> Unit,
     onLoadKernelSuChanged: (Boolean) -> Unit,
     onRerootAtBootChanged: (Boolean) -> Unit,
+    onDmcFixChanged: (Boolean) -> Unit,
     onManagerVersionChanged: (String) -> Unit,
     onShizukuModeChanged: (Boolean) -> Unit,
     onPayloadSourcesChanged: (List<PayloadSource>) -> Unit,
@@ -5582,11 +5599,27 @@ private fun SettingsPage(
                     title = stringResource(R.string.settings_boot_gate_settle),
                     description = stringResource(R.string.settings_boot_gate_settle_summary),
                     value = BootSettle.label(bootGateSettleSeconds),
-                    position = SettingsCardPosition.Bottom,
+                    position = SettingsCardPosition.Middle,
                     enabled = loadKernelSu,
                     onClick = {
                         clickHaptic(view)
                         showBootGateSettleDialog = true
+                    },
+                )
+                // Under the two boot gates, and not beside either: this one is not a way of getting root,
+                // it is what keeps Odin reachable afterwards on the firmware that locks it behind a lock
+                // screen. Off until it is turned on - the write is a byte in a Samsung store whose layout
+                // was confirmed on one chip, so it is a decision rather than a default - and it is handed
+                // to the helper on every launch that can carry it, because only the helper may write it.
+                SettingsSwitchCard(
+                    icon = Icons.Rounded.LockOpen,
+                    title = stringResource(R.string.dfr_dmc_fix),
+                    description = stringResource(R.string.dfr_dmc_fix_detail),
+                    checked = dmcFix,
+                    position = SettingsCardPosition.Bottom,
+                    onCheckedChange = { enabled ->
+                        clickHaptic(view)
+                        onDmcFixChanged(enabled)
                     },
                 )
             }

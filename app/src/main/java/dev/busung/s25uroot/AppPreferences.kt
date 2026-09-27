@@ -69,6 +69,9 @@ object AppPreferences {
     // [bootGateSettleSeconds].
     private const val AUTO_ROOT_SETTLE_SECONDS = "auto_root_settle_seconds"
     private const val DFR_REROOT_AT_BOOT = "dfr_reroot_at_boot"
+
+    /** The D2 fix: the helper writes Samsung's DMC vault flag on every boot so Odin stays reachable. */
+    private const val DFR_DMC_FIX = "dfr_dmc_fix"
     private const val SHIZUKU_AUTOMATION_TOKEN = "shizuku_automation_token"
     private const val SCREEN_OFF_DURING_RUN = "screen_off_during_run"
     private const val GUIDE_ACCEPTED = "guide_accepted"
@@ -408,6 +411,22 @@ object AppPreferences {
         val editor = prefs(context).edit().putBoolean(DFR_REROOT_AT_BOOT, enabled)
         if (enabled) editor.putBoolean(BOOT_ROOT_MODE, false)
         editor.apply()
+    }
+
+    /**
+     * Whether the D2 fix is on: the helper writes Samsung's DMC vault flag at every boot, so download mode
+     * stays reachable on the firmware that locks it on a phone with a lock screen set.
+     *
+     * Off by default, and that default is the honest one rather than a cautious one. The write changes a
+     * byte in a Samsung store whose layout is undocumented and was confirmed on one chip, so it is a thing
+     * a person turns on deliberately - not something a phone acquires by having this app installed. The
+     * switch is this app's and the write is the helper's, because the vault only answers to a system-uid
+     * process: see `DfrInstall.STAGE_TWO_DMC_EXTRA` for how the two halves are joined.
+     */
+    fun dmcFix(context: Context): Boolean = prefs(context).getBoolean(DFR_DMC_FIX, false)
+
+    fun setDmcFix(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(DFR_DMC_FIX, enabled).apply()
     }
 
     /**

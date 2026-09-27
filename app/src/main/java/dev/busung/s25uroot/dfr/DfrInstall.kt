@@ -358,6 +358,18 @@ internal object DfrInstall {
     const val STAGE_TWO_TINT_EXTRA = "rmg.tint"
 
     /**
+     * Whether the D2 fix is on, so the helper writes the vault's flag at boot.
+     *
+     * The setting is this app's, and the write is the helper's, because the vault is a Samsung system
+     * service that only a system-uid process may call. So the app says what it decided and the helper does
+     * it - and says it *every* launch, because the helper stores the value and only a launch can change it.
+     * Absent means the app did not say: an `am start` from the launcher is not the user turning the fix off.
+     *
+     * Held to `Stage2Activity.EXTRA_DMC_FIX` by the test that owns every shared name.
+     */
+    const val STAGE_TWO_DMC_EXTRA = "rmg.dmcFix"
+
+    /**
      * What the helper sets on this app once its run has loaded KernelSU, so the app does the restart.
      *
      * The restart the helper's success needs is KernelSU's own soft reboot, and the helper cannot ask for
@@ -1031,6 +1043,7 @@ internal object DfrInstall {
         rerootAtBoot: Boolean? = null,
         flavor: KernelSuFlavor? = null,
         tint: String? = null,
+        dmcFix: Boolean? = null,
     ): String = buildString {
         append("/system/bin/am start -n '").append(packageName).append("/").append(activity).append('\'')
         if (autorun) append(" --ez ").append(STAGE_TWO_AUTORUN_EXTRA).append(" true")
@@ -1047,6 +1060,12 @@ internal object DfrInstall {
         // would still be a word - but the quoting is what keeps that true of the next value added here.
         if (tint != null) {
             append(" --es ").append(STAGE_TWO_TINT_EXTRA).append(" '").append(tint).append('\'')
+        }
+        // `--ez` like the two booleans above, and passed only when this app has a value to give: the helper
+        // stores what it is told and acts on that at boot, so "not said" has to stay distinguishable from
+        // "said off" - the same distinction [STAGE_TWO_REROOT_EXTRA] makes, for the same reason.
+        if (dmcFix != null) {
+            append(" --ez ").append(STAGE_TWO_DMC_EXTRA).append(' ').append(dmcFix)
         }
     }
 
@@ -1147,9 +1166,16 @@ internal object DfrInstall {
         rerootAtBoot: Boolean?,
         flavor: KernelSuFlavor? = null,
         tint: String? = null,
+        dmcFix: Boolean? = null,
     ): DfrAction? = verdictFor(
         KernelSuRuntime.unprivilegedShell(
-            launchCommand(autorun = autorun, rerootAtBoot = rerootAtBoot, flavor = flavor, tint = tint),
+            launchCommand(
+                autorun = autorun,
+                rerootAtBoot = rerootAtBoot,
+                flavor = flavor,
+                tint = tint,
+                dmcFix = dmcFix,
+            ),
         ),
         LAUNCH_FAILURE,
     )
@@ -1169,9 +1195,16 @@ internal object DfrInstall {
         rerootAtBoot: Boolean? = null,
         flavor: KernelSuFlavor? = null,
         tint: String? = null,
+        dmcFix: Boolean? = null,
     ): DfrAction? = verdictFor(
         runOnEitherShell(
-            launchCommand(autorun = autorun, rerootAtBoot = rerootAtBoot, flavor = flavor, tint = tint),
+            launchCommand(
+                autorun = autorun,
+                rerootAtBoot = rerootAtBoot,
+                flavor = flavor,
+                tint = tint,
+                dmcFix = dmcFix,
+            ),
             TIMEOUT_SECONDS,
         ),
         LAUNCH_FAILURE,

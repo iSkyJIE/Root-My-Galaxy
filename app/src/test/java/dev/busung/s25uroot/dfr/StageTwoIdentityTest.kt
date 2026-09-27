@@ -216,6 +216,19 @@ class StageTwoIdentityTest {
             "the helper declares the auto-run extra but never asks the intent for it",
             stageTwoActivity().contains("getBooleanExtra(EXTRA_AUTORUN"),
         )
+        assertEquals(
+            "the app passes the D2 fix's switch under an extra the helper does not read, so the vault flag " +
+                "would never be written however the setting is set",
+            DfrInstall.STAGE_TWO_DMC_EXTRA,
+            constantIn(stageTwoActivity(), "EXTRA_DMC_FIX"),
+        )
+        // Read as well as declared, for the same reason as the one above: the helper stores this value and
+        // the boot receiver acts on the store, so an extra the screen never looks at is a setting that never
+        // reaches the vault however the app is configured.
+        assertTrue(
+            "the helper declares the D2 fix's extra but never asks the intent for it",
+            stageTwoActivity().contains("hasExtra(EXTRA_DMC_FIX)"),
+        )
     }
 
     @Test

@@ -225,6 +225,8 @@
     <string name="autoroot_skip_install">Skip install</string>
     <string name="dfr_reroot_at_boot">Root on Boot (Helper)</string>
     <string name="dfr_reroot_at_boot_detail">Root again after a reboot, without opening the app. Needs Shizuku running.</string>
+    <string name="dfr_dmc_fix">Keep Odin reachable</string>
+    <string name="dfr_dmc_fix_detail">Writes Samsung\'s DMC vault flag on every boot, so download mode stays available on the firmware that locks it behind a lock screen. Needs the helper installed.</string>
     <string name="dfr_boot_title">Root on Boot (Helper)</string>
     <string name="dfr_boot_channel_name">Root on Boot</string>
     <string name="dfr_boot_channel_description">Starts the helper after reboot if this boot has no root.</string>

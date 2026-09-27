@@ -228,9 +228,14 @@ internal fun DfrInstallDialog(onDismiss: () -> Unit) {
         // was already looking at: the helper cannot see this app's scheme, and its own theme is the
         // platform's. [HelperTint.value] is null if no screen has drawn yet, which is not a case this
         // press can get to - it is a button on one.
+        // And the D2 fix's switch, because this launch is one of only two moments the helper can be told it:
+        // the helper stores the value and acts on it at every boot, so a setting the app never passes is a
+        // setting the boot receiver never sees. It is sent even when it is off - "the app says off" and "the
+        // app did not say" are different answers on that side, and only one of them should turn it off.
         val action = DfrInstall.launch(
             flavor = AppPreferences.kernelsuFlavor(context),
             tint = HelperTint.value,
+            dmcFix = AppPreferences.dmcFix(context),
         )
             ?: return@act listOf(staged, context.getString(R.string.dfr_no_shell)).joinToString("\n")
         listOf(staged, action.log).joinToString("\n")

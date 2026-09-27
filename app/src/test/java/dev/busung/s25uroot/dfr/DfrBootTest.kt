@@ -170,10 +170,14 @@ class DfrBootTest {
     @Test
     fun `the launch at boot is the screen's own command through the plain shell`() {
         val body = declaration(dfrInstallSource(), "internal fun launchWithoutRoot(")
+        // Whitespace-collapsed before comparing: the call is written one argument per line, and a test that
+        // spelled that layout out would fail on a reformat while the two commands were still identical -
+        // which is the opposite of what this asserts.
         assertTrue(
             "the boot rerun no longer sends the command the screen sends, so the two can drift apart",
-            body.contains(
-                "launchCommand(autorun = autorun, rerootAtBoot = rerootAtBoot, flavor = flavor, tint = tint)",
+            body.replace(Regex("\\s+"), " ").contains(
+                "launchCommand( autorun = autorun, rerootAtBoot = rerootAtBoot, flavor = flavor, " +
+                    "tint = tint, dmcFix = dmcFix, )",
             ),
         )
         assertTrue("the launch is no longer through Shizuku's plain shell", body.contains("unprivilegedShell"))

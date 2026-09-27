@@ -23,6 +23,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     android:sharedUserId="android.uid.system">
 
+    <!--
+      The D2 fix's receiver is woken by the platform's own boot broadcasts, so this is the permission it
+      needs - and a system-uid APK has to declare it like any other. See [DmcBootReceiver] for why the
+      boot is where that write happens.
+    -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application
         android:label="RMG-NEXT helper"
         android:icon="@mipmap/ic_launcher"
@@ -48,6 +55,27 @@
         <receiver
             android:name=".StageReceiver"
             android:exported="false" />
+
+        <!--
+          The D2 fix, once per boot.
+
+          `directBootAware="true"` is the whole reason this receiver exists rather than the write being
+          done by the app: the lockdown it answers is applied at boot, so the flag has to be written on
+          `LOCKED_BOOT_COMPLETED` - before anyone has unlocked the phone - and that is a moment only a
+          direct-boot component is woken at. Both actions are declared because the second one is the second
+          chance at a vault service that was not up for the first; the write is a no-op when the flag is
+          already set. `exported="false"` because these are the platform's broadcasts: nothing else on the
+          phone has any business choosing when this runs.
+        -->
+        <receiver
+            android:name=".DmcBootReceiver"
+            android:exported="false"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

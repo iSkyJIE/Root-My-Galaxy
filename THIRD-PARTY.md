@@ -24,11 +24,22 @@ Taken because the mechanism is the point and the alternative was not having it.
 | `dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/StageReceiver.kt` | `app/…/StageReceiver.kt` | Codes named, else unchanged |
 | `dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/KsudStage.kt` | `app/…/KsudStage.kt` | Destination and daemon sources changed |
 | `dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/Stage2Activity.kt` | `app/…/MainActivity.kt` | Rewritten in code rather than XML layouts |
+| `dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/DmcVault.kt` | `app/…/DmcVault.kt` | Rewritten: the reflection is theirs, the shape check and its reasons are ours |
+| `dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/DmcBootReceiver.kt` | `app/…/DmcBootReceiver.kt` | Rewritten: gated on this app's setting, where theirs writes unconditionally |
+| `.DmcBootReceiver` in `dfr/src/main/AndroidManifest.xml` | the same entry in `app/src/main/AndroidManifest.xml` | Same receiver, declared in the helper instead |
+| `dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/DmcGate.kt` | — | **Ours, and it has no counterpart upstream** |
 
 **Ours, in the same flow:** `dfr/` as a Gradle module (their `app` module), `DfrInstall.kt`,
 `DfrFlow.kt`, `DfrApk.kt`, `DfrUi.kt`, every test under `dfr` in both modules, and the decision of how
 the flow is driven. Their two-APK split is forced by `sharedUserId="android.uid.system"` rather than
 chosen — see the module comment in `settings.gradle.kts`.
+
+**The D2 fix is gated here and is not upstream.** Theirs writes the vault's flag at every boot for
+everyone who installed it; ours is a setting in this app that starts off, because the write is a change
+to a Samsung store whose layout was confirmed on one chip and a wrong write there cannot be undone.
+That is also the whole reason `DmcGate.kt` exists: the switch is the app's, the write is the helper's
+(the vault only answers to a system-uid process), and the point in the boot where the write has to
+happen is a point where the app cannot run at all.
 
 ## LSPromise — https://github.com/LSPosed/LSPromise
 

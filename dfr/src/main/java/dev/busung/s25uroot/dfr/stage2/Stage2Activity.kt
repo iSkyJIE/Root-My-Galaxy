@@ -81,6 +81,7 @@ class Stage2Activity : Activity() {
 
     private lateinit var stateView: TextView
     private lateinit var summaryView: TextView
+    private lateinit var dmcView: TextView
     private lateinit var needsHeaderView: TextView
     private lateinit var needsRows: LinearLayout
     private lateinit var runButton: Button
@@ -153,6 +154,13 @@ class Stage2Activity : Activity() {
             ?.getBooleanExtra(EXTRA_REROOT_AT_BOOT, false)
         payloadFlavor = KsudStage.flavorOf(intent?.getStringExtra(EXTRA_FLAVOR))
         tint = parseTint(intent?.getStringExtra(EXTRA_TINT))
+        // The D2 fix's switch, as the app just said it. Stored rather than acted on: what acts on it is the
+        // boot receiver, and this screen only reports it - see [DmcGate] for why the helper keeps a copy at
+        // all. Absent means the app did not say, which leaves the stored value alone: a launch from the
+        // launcher is not the app telling this helper the user turned the fix off.
+        intent?.takeIf { it.hasExtra(EXTRA_DMC_FIX) }?.let {
+            DmcGate.setEnabled(this, it.getBooleanExtra(EXTRA_DMC_FIX, false))
+        }
         palette = Palette(this, tint)
         setContentView(buildScreen())
         dressWindow()
@@ -184,6 +192,7 @@ class Stage2Activity : Activity() {
         runInBackground {
             append(KsudStage.stage(this))
             readThePhone(announce = true)
+            refreshDmc()
             if (autorun) runOnUiThread { startRun() }
         }
     }
@@ -202,6 +211,7 @@ class Stage2Activity : Activity() {
         runInBackground {
             append(KsudStage.stage(this))
             readThePhone(announce = true)
+            refreshDmc()
         }
     }
 
@@ -508,6 +518,34 @@ class Stage2Activity : Activity() {
     }
 
     /**
+     * The D2 vault, read off the main thread.
+     *
+     * Read here rather than in [refreshReadouts] for two reasons that both come down to it not being about
+     * this boot's run: the answer is a property of the phone - whether Odin can be reached - and the read is
+     * a binder call into a system service, which does not belong on the thread that draws.
+     *
+     * Both halves are on the line, because either one alone is misleading: the vault's own three bytes say
+     * what the phone will do at download mode right now, and whether the fix is armed says whether this
+     * helper will keep it that way after the next reboot. A phone with `Odin allowed` and the fix off is a
+     * phone that will lose it; a phone with the fix on and `Odin locked` is one where the write is being
+     * refused, and the reason is in the byte readings.
+     */
+    private fun refreshDmc() {
+        val reading = DmcVault.read()
+        val armed = DmcGate.enabled(this)
+        val last = DmcGate.lastResult(this)
+        val line = buildString {
+            append("D2 vault: ").append(DmcVault.describe(reading))
+            append(if (armed) " · fix on" else " · fix off")
+            last?.let { append("\nlast boot: ").append(it) }
+        }
+        runOnUiThread {
+            dmcView.text = line
+            dmcView.setTextColor(palette.onSurfaceVariant)
+        }
+    }
+
+    /**
      * The file list, as rows under its own header: a tick or a cross, the path, and for a missing one the
      * sentence that says what stops working without it.
      *
@@ -613,6 +651,7 @@ class Stage2Activity : Activity() {
 
         stateView = pill("Ready")
         summaryView = text("", 13f, palette.onSurfaceVariant, Typeface.DEFAULT, 10)
+        dmcView = text("", 12f, palette.onSurfaceVariant, Typeface.DEFAULT, 10)
         needsHeaderView = text("", 12f, palette.accent, Typeface.DEFAULT_BOLD, 16).apply {
             setPadding(dip(2), dip(6), dip(2), dip(6))
             isClickable = true
@@ -635,6 +674,7 @@ class Stage2Activity : Activity() {
                 sectionLabel("This boot"),
                 stateView,
                 summaryView,
+                dmcView,
                 needsHeaderView,
                 needsRows,
                 runButton,
@@ -871,6 +911,16 @@ class Stage2Activity : Activity() {
          * Optional, and absent means absent: this screen has no copy of that setting, and a missing extra
          * is the honest answer for a helper the app did not start.
          */
+        /**
+         * Whether the D2 fix is on, so this helper keeps writing the vault's flag at boot.
+         *
+         * Optional, and absent means absent: the boot receiver reads the copy the app last set, and a launch
+         * that does not carry this is not the app saying the fix is off - it is the app saying nothing, which
+         * is what an `am start` from the launcher is. Held to `DfrInstall.STAGE_TWO_DMC_EXTRA` by the test
+         * that owns every shared name.
+         */
+        const val EXTRA_DMC_FIX = "rmg.dmcFix"
+
         const val EXTRA_REROOT_AT_BOOT = "rmg.rerootAtBoot"
 
         /**
