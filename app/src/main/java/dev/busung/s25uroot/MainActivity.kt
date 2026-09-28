@@ -3668,6 +3668,9 @@ private fun HistoryDetail(
         }
         item { HistoryResultCard(entry) }
         item {
+            // The same pass the run screen makes, so a log does not change shape when it stops being a run and
+            // becomes a record. The stored text stays raw, and so does what the copy button above it copies.
+            val display = remember(entry.log) { formatLogForDisplay(entry.log) }
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.large,
@@ -3676,7 +3679,7 @@ private fun HistoryDetail(
                 ),
             ) {
                 Text(
-                    text = entry.log.ifBlank { stringResource(R.string.history_log_empty) },
+                    text = display ?: stringResource(R.string.history_log_empty),
                     modifier = Modifier.padding(16.dp),
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,

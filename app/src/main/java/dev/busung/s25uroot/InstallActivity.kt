@@ -1156,6 +1156,10 @@ private fun InstallerLog(
 ) {
     val context = LocalContext.current
     val view = LocalView.current
+    // Wrapped, elided and de-ticked on the way to the screen, and nowhere else: the copy button below takes
+    // the raw text, which is what a bug report wants - see [formatLogForDisplay]. Memoised on the log so the
+    // pass runs once per appended line rather than once per frame.
+    val display = remember(output) { formatLogForDisplay(output) }
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
@@ -1188,7 +1192,7 @@ private fun InstallerLog(
             }
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 Text(
-                    text = output.ifBlank { stringResource(R.string.install_preparing) },
+                    text = display ?: stringResource(R.string.install_preparing),
                     modifier = Modifier
                         .fillMaxWidth()
                         .verticalScroll(scrollState),
