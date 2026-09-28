@@ -54,6 +54,21 @@ The eight modules are **verified as taken rather than merely similar**: the copi
 `app/src/main/cpp/dfroot/ko/` and `dfr/src/main/jni/` are byte-identical to upstream's committed ones, KMI for
 KMI, by sha256.
 
+## DFReroot-S25U — https://github.com/igorcv88/DFReroot-S25U
+
+A fork of DFReroot (above) whose work is mostly *hardening* rather than features, and which found two defects in
+`packages.xml` handling by running it on hardware. One of them was in this repository's own copy: the mode and
+owner written back onto the file were read off the backup instead of the original. The other - a 0-byte backup
+being kept as if it were usable - is fixed here too.
+
+From the same project, vendored into [`dfr/src/main/jni/`](dfr/src/main/jni/): `dfr_verified_exec.c` and its
+minimal `sha256.c`/`sha256.h`. The launcher opens a candidate file once, hashes **that descriptor**, rewinds it
+and gives the same descriptor to `execveat(AT_EMPTY_PATH)` - so a rename or replacement after the open cannot
+change the bytes that run. Hashing a pathname and exec'ing it later leaves exactly that window, and this
+repository had it. Its `CMakeLists.txt` builds it as an executable; getting it onto the phone and into a stage
+command is a separate step, because an executable target is not packaged into the APK the way a library's `.so`
+is.
+
 ## DFRoot — https://github.com/diabl0w/DFRoot
 
 No `LICENSE`, no `NOTICE`, no SPDX header in any of the files below: all rights reserved by default. Taken
