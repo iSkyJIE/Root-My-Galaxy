@@ -403,6 +403,9 @@
     <string name="history_run_not_here">That run is no longer in history.</string>
     <string name="history_started">Started: %1$s</string>
     <string name="history_completed">Completed: %1$s</string>
+    <!-- The one measurement in a record: the clock times above say when a run happened, and this says how long
+         it took to root the phone. -->
+    <string name="history_rooted_in">Rooted in %1$s</string>
     <string name="history_log_empty">No log output.</string>
     <string name="history_payload">Payload: %1$s</string>
     <string name="history_source">Source: %1$s</string>
@@ -579,6 +582,9 @@
     <string name="status_ksu_loading">Loading KernelSU</string>
     <string name="status_install_failed">Install failed</string>
     <string name="log_profile">[+] Support profile: %1$s</string>
+    <!-- Measured from the exploit's start, so it is the run's own time rather than the whole run's: a slow
+         download is not counted against it. -->
+    <string name="log_rooted_in">[+] Rooted in %1$s</string>
     <string name="log_payload_source">[+] Payload source: %1$s</string>
     <string name="log_download_verified">[+] Payload download complete</string>
     <string name="log_install_complete">[+] Install complete</string>

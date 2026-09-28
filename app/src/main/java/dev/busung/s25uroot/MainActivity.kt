@@ -3693,6 +3693,17 @@ private fun HistoryResultCard(entry: InstallHistoryEntry) {
                         color = contentColor.copy(alpha = 0.78f),
                     )
                 }
+                // How long it took to root the phone, which is the one fact in this card that is a measurement
+                // rather than a clock reading - the two lines above say when the run happened, and this says
+                // which of two runs was quicker. Absent for a run that got nowhere, and for every record
+                // written before it was measured.
+                entry.rootedInMillis?.let { rooted ->
+                    Text(
+                        stringResource(R.string.history_rooted_in, formatRootDuration(rooted)),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = contentColor.copy(alpha = 0.78f),
+                    )
+                }
                 entry.profileId?.let { profileId ->
                     Text(
                         stringResource(R.string.history_payload, profileId),

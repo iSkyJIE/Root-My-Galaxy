@@ -248,6 +248,9 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
      * its own, and a second one from here would be two notifications for one install.
      */
     private var runIsUnattended = false
+
+    /** Timed here rather than by a screen, because this is the one object every flow's run passes through. */
+    private val rootStopwatch = RootStopwatch()
     private var activeHistoryEntry: InstallHistoryEntry? = null
 
     /** Which stage the run is in, for the failure report. */
@@ -2444,6 +2447,21 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
         // one. The entry is saved per log line already, so this adds no write of its own.
         updateHistory { entry -> entry.copy(phase = phase) }
         appendLog("[*] $message")
+        // The one interval worth timing, and every flow passes through both of its ends here: the universal
+        // root and the payload flow alike start working when the exploit starts, and they are rooted when the
+        // phone is confirmed - `Installed`, or `RootOnly` for a run whose KernelSU load was switched off, where
+        // the root the exploit won is still the root.
+        //
+        // This is where the record's duration comes from, and it is measured rather than read out of the log:
+        // neither of our payloads prints a duration, so a parser would find nothing on either path.
+        when (phase) {
+            InstallPhase.Exploiting -> rootStopwatch.start()
+            InstallPhase.Installed, InstallPhase.RootOnly -> rootStopwatch.elapsedMillis()?.let { rooted ->
+                appendLog(app.getString(R.string.log_rooted_in, formatRootDuration(rooted)))
+                updateHistory { entry -> entry.copy(rootedInMillis = rooted) }
+            }
+            else -> Unit
+        }
         // The run, in the shade, for the length of a run that is usually spent with the phone in a pocket.
         // Not for an unattended run: that one has the boot gate's own notification, and two of them saying
         // the same thing is how the shade stops being read.

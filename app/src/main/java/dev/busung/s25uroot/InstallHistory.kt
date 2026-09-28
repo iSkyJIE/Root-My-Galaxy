@@ -79,6 +79,16 @@ data class InstallHistoryEntry(
      * recorded until then was one.
      */
     val kind: RunKind = RunKind.Payload,
+    /**
+     * How long the run took to root the phone, or null for one that did not, or that predates this.
+     *
+     * The interval from the exploit starting to root being confirmed - see [RootStopwatch] - and the one fact
+     * in this record that is a *measurement* rather than a timestamp. It is what makes two runs comparable: the
+     * clock times above say when they happened, and this says which one was quicker.
+     *
+     * Both flows record it, because both pass through the same two phases to get here.
+     */
+    val rootedInMillis: Long? = null,
 )
 
 /**
@@ -185,6 +195,7 @@ class InstallHistoryStore(private val context: Context) {
         .put("failureReason", entry.failureReason ?: JSONObject.NULL)
         .put("phase", entry.phase?.name ?: JSONObject.NULL)
         .put("kind", entry.kind.name)
+        .put("rootedInMillis", entry.rootedInMillis ?: JSONObject.NULL)
 
     private fun decodeOrQuarantine(file: File): InstallHistoryEntry? = try {
         decode(AtomicFile(file).openRead().use { it.readBytes() })
@@ -221,6 +232,13 @@ class InstallHistoryStore(private val context: Context) {
             // And the flow, read the same forgiving way. An unknown name falls back to the payload run rather
             // than refusing the record, because a record that cannot be read is a run that is hidden.
             kind = RunKind.fromName(value.optionalString("kind")),
+            // Absent in every record written before this, and in one whose run did not root the phone: both
+            // read as "no measurement" rather than as zero, which a duration of 0 could not be told from.
+            rootedInMillis = if (value.isNull("rootedInMillis")) {
+                null
+            } else {
+                value.getLong("rootedInMillis").takeIf { it >= 0L }
+            },
         )
     }
 
