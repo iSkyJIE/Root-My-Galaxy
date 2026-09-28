@@ -211,6 +211,9 @@
     <string name="autoroot_not_started_title">Root on boot didn\'t start</string>
     <string name="autoroot_not_started">Android didn\'t let the install run in the background after the restart. Open the app to install now.</string>
     <string name="autoroot_succeeded">Root succeeded</string>
+    <!-- A boot notification has to say which flow ran, because the two are started by two different things and
+         only one of them was asked for by this boot. -->
+    <string name="autoroot_universal_succeeded">Universal root succeeded</string>
     <string name="autoroot_succeeded_without_shell">Root obtained. Shizuku wasn\'t running, but this payload doesn\'t need a shell.</string>
     <string name="autoroot_boot_changed">The phone restarted before the install started</string>
     <string name="autoroot_timed_out">The operation took too long</string>
@@ -406,6 +409,12 @@
     <string name="history_source_commit">Source: %1$s @ %2$s</string>
     <string name="history_shizuku_used">Shizuku: used</string>
     <string name="history_shizuku_not_used">Shizuku: not used</string>
+    <!-- The flow a stored run was, said only for the one that has to be told: every run recorded before the
+         field existed is a payload run, so marking those would tell the reader nothing they had not assumed. -->
+    <string name="history_kind_universal">Universal root</string>
+    <!-- The detail card's version, in the place the transport line sits: a payload run says how it got its
+         privileges (Shizuku or the helper), and this flow's answer is that it used neither. -->
+    <string name="history_kind_universal_detail">Universal root \u2014 no helper, no Shizuku</string>
     <string name="export_log">Export log</string>
     <string name="export_log_saved">Log saved</string>
     <string name="export_log_failed">Couldn\'t save log</string>
@@ -644,6 +653,11 @@
     <string name="stage_exploit">Running kernel exploit</string>
     <string name="stage_kernel_su">Loading KernelSU</string>
     <string name="stage_verify">Verifying KernelSU control channel</string>
+    <!-- The universal root's own stages. Its second step resolves a payload and stages a daemon, where the
+         payload flow's downloads a payload and resolves a target, so the two cannot share a sentence. -->
+    <string name="universal_stage_support">Checking the device and this boot</string>
+    <string name="universal_stage_payload">Resolving the payload and staging the daemon</string>
+    <string name="universal_stage_exploit">Running the kernel exploit</string>
     <!--
       The manager step of a run: the manager app of the flavour the payload loads, which is what drives the
       loaded KernelSU afterwards. Named by route, because "installed" with no "by what" is not a report.
@@ -1168,6 +1182,9 @@ Hold Power and Volume Down together for 7 seconds to Reboot it from there.</stri
     <string name="run_chip_checking">Checking</string>
     <string name="run_chip_waiting">Waiting</string>
     <string name="run_chip_download">Download</string>
+    <!-- The universal root's second step stages a daemon rather than fetching a payload: the same stage, a
+         different thing happening, and the chip has one word for it. -->
+    <string name="run_chip_daemon">Daemon</string>
     <string name="run_chip_exploit">Exploit</string>
     <string name="run_chip_loading">KernelSU</string>
     <string name="run_chip_rooted">Rooted</string>

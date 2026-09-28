@@ -46,6 +46,9 @@ object AppPreferences {
     private const val BOOT_ROOT_MODE = "boot_root_mode"
     private const val RESTART_AFTER_ROOT = "restart_after_root"
     private const val RETRY_AFTER_REBOOT = "retry_after_reboot_boot"
+    private const val UNIVERSAL_PLAN_FLAVOR = "universal_plan_flavor"
+    private const val UNIVERSAL_PLAN_TIER = "universal_plan_tier"
+    private const val UNIVERSAL_RETRY_BOOT = "universal_retry_boot"
     private const val SHIZUKU_BOOT_MODE = "shizuku_boot_mode"
     private const val BOOT_SETTLE_SECONDS = "boot_settle_seconds"
     private const val RUN_STALL_SECONDS = "run_stall_seconds"
@@ -480,6 +483,72 @@ object AppPreferences {
 
     /** Whether a retry is armed at all, whatever boot armed it. */
     fun retryArmed(context: Context): Boolean = retryArmedInBoot(context) != null
+
+    /**
+     * What the last universal run resolved: which KernelSU, and which payload tier.
+     *
+     * Written when a universal run resolves its payload and read by whatever wants to run it again - a retry
+     * armed for the next boot, and the arming itself. It is stored rather than passed along because the two
+     * are not in the same process, or even the same boot: the run that resolved it is over by the time the
+     * retry runs.
+     *
+     * The flavour alone would be nearly enough - it is the same value the resolved payload writes - but not
+     * quite: that setting is the payload's to change, and somebody picking another flavour in the payload
+     * sheet would silently retarget a retry that was armed for the run they watched fail.
+     */
+    fun setUniversalPlan(context: Context, plan: UniversalPlan?) {
+        val editor = prefs(context).edit()
+        if (plan == null) {
+            editor.remove(UNIVERSAL_PLAN_FLAVOR).remove(UNIVERSAL_PLAN_TIER)
+        } else {
+            editor.putString(UNIVERSAL_PLAN_FLAVOR, plan.flavor.id)
+                .putString(UNIVERSAL_PLAN_TIER, plan.tier.name)
+        }
+        editor.apply()
+    }
+
+    /** The plan [setUniversalPlan] recorded, or null when no universal run has resolved one. */
+    fun universalPlan(context: Context): UniversalPlan? {
+        val flavor = prefs(context).getString(UNIVERSAL_PLAN_FLAVOR, null)
+            ?.let(KernelSuFlavor::fromId)
+            ?: return null
+        val tier = prefs(context).getString(UNIVERSAL_PLAN_TIER, null)
+            ?.let(PayloadTier::fromId)
+            ?: return null
+        return UniversalPlan(flavor, tier)
+    }
+
+    /**
+     * Arms the universal root's retry for the boot after [armedForBoot], or clears it with null.
+     *
+     * The same shape as [setRetryAfterReboot] and for the same reasons: committed rather than applied, because
+     * the retry is armed before a reboot is asked for and an asynchronous write that had not landed would lose
+     * the whole decision - and keyed on the boot that armed it, so the boot it was armed *for* is the one that
+     * finds it pending and no later boot inherits it.
+     */
+    fun setUniversalRetryAfterReboot(context: Context, armedForBoot: String?) {
+        val editor = prefs(context).edit()
+        if (armedForBoot == null) {
+            editor.remove(UNIVERSAL_RETRY_BOOT)
+        } else {
+            editor.putString(UNIVERSAL_RETRY_BOOT, armedForBoot)
+        }
+        editor.commit()
+    }
+
+    /**
+     * The universal retry this boot should run, or null when none was armed for it.
+     *
+     * Null in the boot that armed it, which is the whole mechanism: the arming happens *before* the restart is
+     * asked for, so the boot that finds it pending is necessarily a different one. The plan comes with it, and
+     * a record missing either half is no retry at all rather than a guess - a retry that ran the other
+     * KernelSU would install a root nobody asked for.
+     */
+    fun universalRetryPendingForBoot(context: Context): UniversalPlan? {
+        val armed = prefs(context).getString(UNIVERSAL_RETRY_BOOT, null) ?: return null
+        if (armed == AutoRootSupport.currentBootToken()) return null
+        return universalPlan(context)
+    }
 
     /**
      * How many image partitions a run set read-only in this boot, and zero when this boot set none.

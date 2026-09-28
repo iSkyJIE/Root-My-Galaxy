@@ -66,6 +66,8 @@ internal object RunNotification {
         context: Context,
         message: String,
         phase: InstallPhase,
+        /** Which flow the run is, because the chip's word for a stage is the run's own. See [chipLabel]. */
+        kind: RunKind,
         progress: Float,
         runId: String?,
     ) {
@@ -79,7 +81,7 @@ internal object RunNotification {
                     verdict = RunVerdict.Running,
                     withActions = true,
                     runId = runId,
-                    stage = Stage(progress, phase),
+                    stage = Stage(progress, phase, kind),
                 ).build(),
             )
         }.onFailure { error ->
@@ -191,7 +193,7 @@ internal object RunNotification {
             // The bar, and where the platform has one, the live update. Both live in [live], because the
             // boot gate's notification is about the same run and is the one a phone in a pocket actually
             // shows after a reboot: it asks for its own with the same call.
-            stage?.let { live(this, context.getString(chipLabel(it.phase)), it.fraction) }
+            stage?.let { live(this, context.getString(chipLabel(it.phase, it.kind)), it.fraction) }
             if (!withActions) return@apply
             addAction(
                 0,
@@ -211,7 +213,7 @@ internal object RunNotification {
      * One value rather than two arguments, because a fraction with no word and a word with no fraction are
      * the same mistake - a live update the platform cannot draw - and the two are one fact about one stage.
      */
-    private data class Stage(val fraction: Float, val phase: InstallPhase)
+    private data class Stage(val fraction: Float, val phase: InstallPhase, val kind: RunKind)
 
     /**
      * The bar, and where this phone has one, the live update - for any notification about the run.
@@ -252,11 +254,16 @@ internal object RunNotification {
      * ones a run passes through, because a phase that was added without one would post a live update with an
      * empty chip - and the compiler asking for this line is what stops that.
      */
-    internal fun chipLabel(phase: InstallPhase): Int = when (phase) {
+    internal fun chipLabel(phase: InstallPhase, kind: RunKind = RunKind.Payload): Int = when (phase) {
         InstallPhase.Probing, InstallPhase.Ready -> R.string.run_chip_starting
         InstallPhase.Checking -> R.string.run_chip_checking
         InstallPhase.Settling -> R.string.run_chip_waiting
-        InstallPhase.Downloading -> R.string.run_chip_download
+        // The one stage the two flows name differently. A payload run's second step fetches a catalog and a
+        // payload, which is "Download"; the universal root's stages a daemon, and calling that a download in
+        // the shade is the payload flow's word for a step it is not doing. The default is the payload run
+        // because the boot gate - the other caller - installs payloads.
+        InstallPhase.Downloading ->
+            if (kind == RunKind.Universal) R.string.run_chip_daemon else R.string.run_chip_download
         InstallPhase.Exploiting -> R.string.run_chip_exploit
         InstallPhase.LoadingKernelSu -> R.string.run_chip_loading
         InstallPhase.Installed, InstallPhase.RootOnly -> R.string.run_chip_rooted

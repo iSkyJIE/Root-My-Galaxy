@@ -79,9 +79,14 @@ class AutoRootBootReceiver : BroadcastReceiver() {
         }
         // A one-shot retry armed from the run screen counts here too: those two are the only ways this
         // boot can have been asked for an install, and the gate is where either one is carried out.
+        // The universal root's own armed retry is a third way this boot can have been asked for an install,
+        // and neither of the two above covers it: it is a different flow with its own settings, so a phone
+        // whose only run has ever been a universal one has root-on-boot off and no payload retry armed - and
+        // would stand down here, never reaching the branch in the gate that knows how to run it.
         val bootRootMode = AppPreferences.bootRootMode(context)
         val retryArmed = AppPreferences.retryArmed(context)
-        if (!bootRootMode && !retryArmed) {
+        val universalArmed = AppPreferences.universalRetryPendingForBoot(context) != null
+        if (!bootRootMode && !retryArmed && !universalArmed) {
             AppLog.debug(
                 AppLogTags.BOOT,
                 "No install this boot: root on boot is off and no retry is armed",
@@ -90,7 +95,8 @@ class AutoRootBootReceiver : BroadcastReceiver() {
         }
         AppLog.info(
             AppLogTags.BOOT,
-            "A boot install was asked for (root on boot=$bootRootMode, retry armed=$retryArmed)",
+            "A boot install was asked for (root on boot=$bootRootMode, retry armed=$retryArmed, " +
+                "universal retry armed=$universalArmed)",
         )
 
         // The boot id is the only thing that tells a real reboot from a userspace restart that

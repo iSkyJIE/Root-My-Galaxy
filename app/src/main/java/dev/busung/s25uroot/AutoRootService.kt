@@ -124,6 +124,23 @@ class AutoRootService : Service() {
             stopWithoutResult()
             return
         }
+        // The universal root's armed retry, asked before anything about the payload flow is. It is a different
+        // flow with different settings - no cached payload, no Shizuku promise, no root-on-boot switch - so the
+        // questions below are not its questions, and a phone that has never installed a payload would stand down
+        // long before reaching it.
+        val universalRetry = AppPreferences.universalRetryPendingForBoot(this)
+        if (universalRetry != null) {
+            // Consumed here rather than where it was armed: this is the boot it was armed for, and a retry left
+            // armed would run again on every boot after it.
+            AppPreferences.setUniversalRetryAfterReboot(this, null)
+            AppLog.info(
+                AppLogTags.BOOT,
+                "Universal retry armed for this boot: ${universalRetry.flavor.label}, " +
+                    "${universalRetry.tier.name} payload",
+            )
+            runUniversalRetry(universalRetry, initialBootToken)
+            return
+        }
         // The authoritative reading, not the native one: this is the decision that spends the boot's
         // single install attempt, and on this hardware the native paths can be denied by policy while
         // root is live. Asking twice costs a process; asking wrongly costs a doomed install.
@@ -542,6 +559,90 @@ class AutoRootService : Service() {
             delay(BootSettle.TICK_MILLIS)
             spentMillis += BootSettle.TICK_MILLIS
         }
+    }
+
+    /**
+     * The armed universal retry, run the way the gate runs a payload install.
+     *
+     * Its own path rather than a flag on the payload one, because what it repeats is not what that gate
+     * resolves: this is the plan the failed attempt recorded - a KernelSU and a payload tier - and there is no
+     * cache, no Shizuku promise and no root-on-boot setting in it. What the two do share is everything that
+     * belongs to the *boot* rather than to a flow: the wake lock, the settle floor, one notification for the
+     * run, and a verdict at the end.
+     */
+    private suspend fun runUniversalRetry(plan: UniversalPlan, bootToken: String) {
+        val wakeLock = acquireGateWakeLock()
+        try {
+            withTimeout(GATE_LIMIT_MILLIS) {
+                // The same settle floor, for the same reason: the exploit's timing is delicate, and a phone
+                // still finishing its boot is the wrong moment to patch a vendor library. It is also what
+                // gives the reboot the phone just did time to put the marker the last run armed out of reach.
+                awaitSettledFloor()
+                if (RootStatusProbe.isActive()) {
+                    // Root is already live, and the chain is RAM-only, so this is not a leftover of the run
+                    // being retried: there is nothing for this boot's retry to do.
+                    AutoRootSupport.markVerifiedForBoot(this@AutoRootService, bootToken)
+                    AppLog.info(AppLogTags.BOOT, "Universal retry skipped after the wait: KernelSU is active")
+                    return@withTimeout
+                }
+                if (RunInFlight.holder(this@AutoRootService) != null) {
+                    AppLog.warn(AppLogTags.BOOT, "Universal retry stood down: a run was in flight")
+                    finish(getString(R.string.autoroot_run_in_flight))
+                    return@withTimeout
+                }
+                runUniversalRun(plan, bootToken)
+            }
+        } catch (timeout: TimeoutCancellationException) {
+            AppLog.error(
+                AppLogTags.BOOT,
+                "Universal retry gave up after ${GATE_LIMIT_MILLIS / 1000} s without finishing",
+            )
+            finish(getString(R.string.autoroot_failed, getString(R.string.autoroot_timed_out)))
+        } catch (error: Throwable) {
+            val detail = error.message ?: error.javaClass.simpleName
+            AppLog.error(AppLogTags.BOOT, "Universal retry failed: $detail", error)
+            finish(getString(R.string.autoroot_failed, detail))
+        } finally {
+            releaseQuietly(wakeLock)
+        }
+    }
+
+    /** The run itself, with this service posting each stage and the verdict at the end. */
+    private suspend fun runUniversalRun(plan: UniversalPlan, bootToken: String) {
+        val model = InstallViewModel(application)
+        viewModel = model
+        progressJob = scope.launch {
+            model.state.collect { state ->
+                if (!state.busy) return@collect
+                val line = state.log.lineSequence().lastOrNull()?.take(MAX_NOTIFICATION_DETAIL)
+                notifyOngoing(
+                    message = state.message.ifBlank { line.orEmpty() },
+                    // The universal flow's own word for the stage: the chip is per-flow, and this is that
+                    // flow's boot run - calling its second stage a download is the other flow's word.
+                    chip = RunNotification.chipLabel(state.phase, RunKind.Universal),
+                    fraction = installProgress(state.phase, state.failure?.stage),
+                )
+            }
+        }
+        notifyOngoing(message = getString(R.string.autoroot_starting), chip = R.string.run_chip_starting)
+        model.runUniversalToCompletion(plan.flavor, plan.tier)
+        progressJob?.cancel()
+        progressJob = null
+
+        val state = model.state.value
+        if (state.phase == InstallPhase.Installed) {
+            AutoRootSupport.markVerifiedForBoot(this, bootToken)
+            // The offer a payload install's boot run also makes, and for the same reason: KernelSU is loaded
+            // and its modules are not, because this happened in a userspace that was already built.
+            finish(getString(R.string.autoroot_universal_succeeded), offerSoftReboot = true)
+            return
+        }
+        finish(
+            getString(
+                R.string.autoroot_failed,
+                state.message.ifBlank { getString(R.string.autoroot_timed_out) },
+            ),
+        )
     }
 
     /**

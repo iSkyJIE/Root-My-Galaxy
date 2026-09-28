@@ -3568,6 +3568,17 @@ private fun HistoryEntryCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = contentColor.copy(alpha = 0.78f),
                 )
+                // Which flow the run was - and only the one that has to be said out loud. Every run recorded
+                // before the field existed is a payload run, so a payload row marked as one would be telling
+                // the reader what they already assumed, and the rest of this app describes that flow by
+                // default. A universal run is the exception, and until now it was indistinguishable here.
+                if (entry.kind == RunKind.Universal) {
+                    Text(
+                        stringResource(R.string.history_kind_universal),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = contentColor.copy(alpha = 0.78f),
+                    )
+                }
             }
             if (!selectionMode) {
                 Icon(Icons.Rounded.ChevronRight, contentDescription = null)
@@ -3715,14 +3726,17 @@ private fun HistoryResultCard(entry: InstallHistoryEntry) {
                         color = contentColor.copy(alpha = 0.78f),
                     )
                 }
+                // How the run got what it needed, which is a different fact on each flow: a payload run went
+                // through Shizuku or through the helper, and the universal root used neither. It is said with
+                // the flow, because "Shizuku: not used" about a run that has no helper either reads as a
+                // payload run that chose the helper - the one thing this run was not.
                 Text(
-                    stringResource(
-                        if (entry.usedShizuku) {
-                            R.string.history_shizuku_used
-                        } else {
-                            R.string.history_shizuku_not_used
-                        },
-                    ),
+                    text = when {
+                        entry.kind == RunKind.Universal ->
+                            stringResource(R.string.history_kind_universal_detail)
+                        entry.usedShizuku -> stringResource(R.string.history_shizuku_used)
+                        else -> stringResource(R.string.history_shizuku_not_used)
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = contentColor.copy(alpha = 0.78f),
                 )

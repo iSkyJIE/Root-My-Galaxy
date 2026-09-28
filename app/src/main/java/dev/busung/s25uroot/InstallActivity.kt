@@ -230,6 +230,7 @@ class InstallActivity : ComponentActivity() {
                             }
                         },
                         onRebootAndRetry = { installViewModel.armRetryAfterReboot() },
+                        onRebootAndRetryUniversal = { installViewModel.armUniversalRetryAfterReboot() },
                         onClose = ::finish,
                         onOpenSetting = ::openSettingsCard,
                     )
@@ -377,6 +378,14 @@ private fun InstallScreen(
     onStop: () -> Unit,
     /** Arms one retry for the next boot and reboots; reports whether the reboot was requested. */
     onRebootAndRetry: suspend () -> Boolean,
+    /**
+     * The same answer for the universal root, which arms a run of *that* flow rather than the payload gate's.
+     *
+     * Two callbacks rather than one because they arm two different things. The one above arms the payload
+     * flow's boot gate - a cached payload, a Shizuku promise, the regular steps - so a universal failure
+     * offering it would arm a payload install, which is the one thing keeping the two flows apart is for.
+     */
+    onRebootAndRetryUniversal: suspend () -> Boolean,
     onClose: () -> Unit,
     /** Opens a settings card by its target, for the one failure whose fix is a switch in this app. */
     onOpenSetting: (String) -> Unit,
@@ -386,6 +395,9 @@ private fun InstallScreen(
     val pageScrollState = rememberScrollState()
     val view = LocalView.current
     var showRetryChoice by remember { mutableStateOf(false) }
+    // For the bar's one answer that is not instantaneous: arming a retry for the next boot writes a preference
+    // and asks the system for a restart, so it is a suspend call rather than a tap handler.
+    val scope = rememberCoroutineScope()
     // Whether a reboot was *asked for*, which is all the app can know: null while nothing has been
     // asked, false when the phone would not take the request.
     var retryNotice by remember { mutableStateOf<Boolean?>(null) }
@@ -529,6 +541,17 @@ private fun InstallScreen(
                                 }
                                 installState.phase == InstallPhase.Failed ||
                                     installState.phase == InstallPhase.Stopped -> {
+                                    // A universal run gets Close and nothing else, and it is the loud answer for
+                                    // it because it is the only one. The retry beside it belongs to the payload
+                                    // flow: its answers are "retry in this boot", which *runs the payload
+                                    // install*, and "reboot and retry", which arms one for the boot gate. A
+                                    // failure of the universal root offering those is one flow's control
+                                    // starting the other flow's run - which is what it did.
+                                    //
+                                    // It is also a retry that cannot work here. The chain arms a marker only a
+                                    // reboot clears, and the run refuses itself while that marker is up, so a
+                                    // retry offered in this boot would be pressed and then refused.
+                                    val universalRun = installState.kind == RunKind.Universal
                                     AppActionButton(
                                         AppAction(R.string.action_close) {
                                             clickHaptic(view)
@@ -536,16 +559,37 @@ private fun InstallScreen(
                                         },
                                         Modifier.weight(1f),
                                     )
-                                    AppActionButton(
-                                        AppAction(
-                                            label = R.string.action_retry,
-                                            role = AppActionRole.Priority,
-                                        ) {
-                                            clickHaptic(view)
-                                            showRetryChoice = true
-                                        },
-                                        Modifier.weight(1f),
-                                    )
+                                    if (universalRun) {
+                                        // This flow's own retry, and it works where the payload flow's would
+                                        // not: a restart clears the marker the chain arms only for a reboot to
+                                        // clear, and the boot gate then runs the plan the failed run recorded -
+                                        // the same KernelSU and the same payload tier, from the same settings.
+                                        //
+                                        // What is *not* reported here is whether the restart was taken: the
+                                        // arming is what matters and it has already happened by the time this
+                                        // returns, and the run's own log is where the two are told apart.
+                                        AppActionButton(
+                                            AppAction(
+                                                label = R.string.retry_after_reboot,
+                                                role = AppActionRole.Priority,
+                                            ) {
+                                                clickHaptic(view)
+                                                scope.launch { onRebootAndRetryUniversal() }
+                                            },
+                                            Modifier.weight(1f),
+                                        )
+                                    } else {
+                                        AppActionButton(
+                                            AppAction(
+                                                label = R.string.action_retry,
+                                                role = AppActionRole.Priority,
+                                            ) {
+                                                clickHaptic(view)
+                                                showRetryChoice = true
+                                            },
+                                            Modifier.weight(1f),
+                                        )
+                                    }
                                 }
                                 else -> {
                                     // The step after a successful load, and the reason it is here rather than
@@ -617,7 +661,7 @@ private fun InstallScreen(
                 phase = installState.phase,
                 failure = installState.failure,
                 stoppedAt = installState.stoppedAt,
-                universal = installState.universal,
+                kind = installState.kind,
             )
             InstallerLog(
                 output = installState.log,
@@ -1003,16 +1047,16 @@ private fun InstallerStatusCard(
 private fun InstallerSteps(
     phase: InstallPhase,
     failure: RunFailure?,
-    stoppedAt: RunStage? = null,
+    stoppedAt: FailureStage? = null,
     /**
-     * Whether the run these steps describe is the universal root.
+     * Which flow the run these steps describe is - see [RunKind].
      *
      * The four rows are the same four steps either way, so the list is picked here rather than the screen
      * being forked: what changes is only the wording of a step whose payload-run text would be a lie on this
-     * path - "Download / Load the support list" describes a run that fetches a payload, and this one fetches
-     * nothing at all.
+     * path - "Download / Load the support list" describes a run that fetches a support list, where the
+     * universal root stages a daemon.
      */
-    universal: Boolean = false,
+    kind: RunKind = RunKind.Payload,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1025,7 +1069,7 @@ private fun InstallerSteps(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            (if (universal) universalInstallerSteps else installerSteps).forEachIndexed { index, step ->
+            (if (kind == RunKind.Universal) universalInstallerSteps else installerSteps).forEachIndexed { index, step ->
                 val stepState = installerStepState(phase, index, failure?.stage ?: stoppedAt)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -1351,7 +1395,7 @@ private val LOG_PANEL_HEIGHT = 280.dp
  * A failure stops at the step it died in rather than dropping back to nothing: an empty bar on a run
  * that reached the kernel exploit threw away the one thing the card could still say about it.
  */
-internal fun installProgress(phase: InstallPhase, failureStage: RunStage?): Float = when (phase) {
+internal fun installProgress(phase: InstallPhase, failureStage: FailureStage?): Float = when (phase) {
     // Nothing has been attempted, so nothing is claimed: the run's own first step is not under way.
     InstallPhase.Probing -> 0f
     InstallPhase.Checking -> 0.1f
@@ -1364,8 +1408,11 @@ internal fun installProgress(phase: InstallPhase, failureStage: RunStage?): Floa
     // Everything that was going to happen happened, and the load was not part of it, so the bar
     // stops short of claiming a step the run was told to skip.
     InstallPhase.RootOnly -> 0.9f
+    // Each stage carries the step it belongs to, so this no longer has to know a vocabulary - and a stage of
+    // the other flow now lands on the right step instead of on whichever payload step happened to share its
+    // place in a `when`.
     InstallPhase.Failed -> failureStage
-        ?.let { reached -> (installerStepForStage(reached) + 1) / installerSteps.size.toFloat() }
+        ?.let { failed -> (failed.stepIndex + 1) / installerSteps.size.toFloat() }
         ?: 0f
     // Stopped where it was stopped, for the same reason a failure is: the bar's job is to say how far
     // the run got, and how far it got is the part with consequences.
@@ -1395,12 +1442,7 @@ internal enum class InstallerStepState {
  * and verifying the control channel is part of loading KernelSU - so the mapping is by step and not by
  * stage.
  */
-internal fun installerStepForStage(stage: RunStage): Int = when (stage) {
-    RunStage.Transport, RunStage.Target -> 0
-    RunStage.Download -> 1
-    RunStage.Exploit -> 2
-    RunStage.KernelSu, RunStage.Verify -> 3
-}
+internal fun installerStepForStage(stage: FailureStage): Int = stage.stepIndex
 
 /**
  * The state of one step.
@@ -1412,7 +1454,7 @@ internal fun installerStepForStage(stage: RunStage): Int = when (stage) {
 internal fun installerStepState(
     phase: InstallPhase,
     stepIndex: Int,
-    failureStage: RunStage? = null,
+    failureStage: FailureStage? = null,
 ): InstallerStepState = when (phase) {
     InstallPhase.Installed -> InstallerStepState.Done
 

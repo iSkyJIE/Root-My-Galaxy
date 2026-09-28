@@ -47,8 +47,13 @@ data class InstallHistoryEntry(
     val sourceLabel: String? = null,
     val sourceCommit: String? = null,
     val usedShizuku: Boolean = false,
-    /** Where a failed run stopped, so the detail screen can say more than "Failed". */
-    val failureStage: RunStage? = null,
+    /**
+     * Where a failed run stopped, so the detail screen can say more than "Failed".
+     *
+     * A [FailureStage] rather than one flow's enumeration: the payload flow's steps and the universal root's are
+     * different steps, and which one a record holds depends only on which flow the run was - see [RunKind].
+     */
+    val failureStage: FailureStage? = null,
     val failureReason: String? = null,
     /**
      * Where a run in flight has got to, written as it moves and cleared when it ends.
@@ -62,6 +67,18 @@ data class InstallHistoryEntry(
      * is one nothing can draw a bar for, which is not the same as a run at its first step.
      */
     val phase: InstallPhase? = null,
+    /**
+     * Which flow the run was - see [RunKind].
+     *
+     * Recorded for the same reason the phase is: a run is read back by a screen that did not start it, and
+     * what that screen says about it is drawn from the record. Without this the two flows are one, and a
+     * universal run is read back as a payload run - which draws the payload flow's four steps over a run that
+     * fetched no payload, and offers the payload flow's Retry on a run that cannot be retried in this boot.
+     *
+     * [RunKind.Payload] for every record written before this existed, which is correct: every run the app
+     * recorded until then was one.
+     */
+    val kind: RunKind = RunKind.Payload,
 )
 
 /**
@@ -167,6 +184,7 @@ class InstallHistoryStore(private val context: Context) {
         .put("failureStage", entry.failureStage?.name ?: JSONObject.NULL)
         .put("failureReason", entry.failureReason ?: JSONObject.NULL)
         .put("phase", entry.phase?.name ?: JSONObject.NULL)
+        .put("kind", entry.kind.name)
 
     private fun decodeOrQuarantine(file: File): InstallHistoryEntry? = try {
         decode(AtomicFile(file).openRead().use { it.readBytes() })
@@ -194,13 +212,15 @@ class InstallHistoryStore(private val context: Context) {
             sourceLabel = value.optionalString("sourceLabel"),
             sourceCommit = value.optionalString("sourceCommit"),
             usedShizuku = value.optBoolean("usedShizuku", false),
-            failureStage = value.optionalString("failureStage")
-                ?.let { name -> RunStage.entries.firstOrNull { it.name == name } },
+            failureStage = FailureStage.fromName(value.optionalString("failureStage")),
             failureReason = value.optionalString("failureReason"),
             // Read the same way, and forgiving for the same reason: a phase this build does not know is a
             // record written by another one, and a bar that cannot be drawn is not a record that cannot be read.
             phase = value.optionalString("phase")
                 ?.let { name -> InstallPhase.entries.firstOrNull { it.name == name } },
+            // And the flow, read the same forgiving way. An unknown name falls back to the payload run rather
+            // than refusing the record, because a record that cannot be read is a run that is hidden.
+            kind = RunKind.fromName(value.optionalString("kind")),
         )
     }
 

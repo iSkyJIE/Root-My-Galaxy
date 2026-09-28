@@ -81,7 +81,7 @@ data class InstallUiState(
      * Kept apart from [failure] because the card reads the two differently: a failure marks the step
      * that went wrong, and a stop marks the step that was in flight when it was abandoned.
      */
-    val stoppedAt: RunStage? = null,
+    val stoppedAt: FailureStage? = null,
     /**
      * A run that has stopped before it began, because Shizuku was asked for and is not running.
      *
@@ -91,13 +91,14 @@ data class InstallUiState(
      */
     val transportPrompt: TransportPrompt? = null,
     /**
-     * Whether this run is the universal root rather than a payload run.
+     * Which of the two flows this run is - see [RunKind].
      *
-     * Carried in the state because the screen draws the steps from it: the same four rows either way, and the
-     * wording of two of them changes - see `universalInstallerSteps`. It is a field of the run rather than a
-     * second screen so the bar, the log, the Stop button and the failure handling are the same ones.
+     * Carried in the state because everything flow-specific is drawn or answered from it: the step list's
+     * wording, the notification's word for the stage, and the bar's terminal answers. It is a field of the run
+     * rather than a second screen so the bar, the log, the Stop button and the failure handling stay the ones
+     * that are already written, and so a screen that did not start the run can still tell which it is.
      */
-    val universal: Boolean = false,
+    val kind: RunKind = RunKind.Payload,
 ) {
     /**
      * Whether a run is under way, which is not the same question as whether the app is working.
@@ -485,12 +486,16 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
      * `LoadingKernelSu`), so the screen that draws a payload run draws this one with no change at all: the
      * step rows, the progress and the Stop button come from the phase the state is in.
      */
-    fun startUniversalRun(flavor: KernelSuFlavor, tier: PayloadTier) {
+    fun startUniversalRun(flavor: KernelSuFlavor, tier: PayloadTier, unattended: Boolean = false) {
         if (installJob?.isActive == true) return
         installJob = viewModelScope.launch {
             startHistory()
             // After startHistory, which clears it for every run.
-            mutableState.value = mutableState.value.copy(universal = true)
+            mutableState.value = mutableState.value.copy(kind = RunKind.Universal)
+            // An unattended run is one nobody is watching, which the boot gate's is. It suppresses this run's
+            // own notification, because the gate posts one for the run it started and two of them saying the
+            // same thing is how the shade stops being read - and it is what the screen-off hold reads.
+            runIsUnattended = unattended
             // Said out loud, because the four steps look like a payload run's four steps and a person has no
             // other way to tell which one they are watching.
             appendLog("[*] Universal root: no helper, no Shizuku, no temporary root")
@@ -499,20 +504,20 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             setPhase(InstallPhase.Checking, app.getString(R.string.universal_step_check))
             val snapshot = runCatching { DeviceSnapshot.current() }.getOrNull()
             if (snapshot == null) {
-                failUniversal(app.getString(R.string.universal_no_device))
+                failUniversal(UniversalStage.Support, app.getString(R.string.universal_no_device))
                 return@launch
             }
             appendLog("device: ${snapshot.model} (${snapshot.device}), ${snapshot.abi}")
             appendLog("kernel: ${snapshot.kernelRelease}")
             appendLog("android: ${snapshot.androidRelease} (sdk ${snapshot.sdk}), page size ${snapshot.pageSize}")
             if (snapshot.abi != "arm64-v8a") {
-                failUniversal(app.getString(R.string.universal_wrong_abi, snapshot.abi))
+                failUniversal(UniversalStage.Support, app.getString(R.string.universal_wrong_abi, snapshot.abi))
                 return@launch
             }
             // The exploit's first act arms a marker only a reboot clears, so a second run through an armed
             // kernel is either a no-op or a second load into a kernel that already has the module.
             if (UniversalRootRun.alreadyArmed()) {
-                failUniversal(app.getString(R.string.universal_already_armed))
+                failUniversal(UniversalStage.Support, app.getString(R.string.universal_already_armed))
                 return@launch
             }
 
@@ -534,7 +539,10 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             val plan = runCatching {
                 withContext(Dispatchers.IO) { UniversalRootRun.plan(app, flavor, tier) }
             }.getOrElse { error ->
-                failUniversal(error.message ?: app.getString(R.string.universal_no_payload))
+                failUniversal(
+                    UniversalStage.Payload,
+                    error.message ?: app.getString(R.string.universal_no_payload),
+                )
                 return@launch
             }
             appendLog("[*] ${plan.description}")
@@ -545,6 +553,9 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             // [rememberResolvedPayload] - so the manager installed below, the release the manager rows offer
             // and the module root put back on boot all follow the daemon that is actually staged.
             rememberResolvedKernelSu(app, plan.flavor, plan.version)
+            // What this run is, written down before a byte is fetched: it is what an armed retry repeats on the
+            // next boot, and by then this process is gone and often this boot with it.
+            AppPreferences.setUniversalPlan(app, UniversalPlan(plan.flavor, tier))
 
             // 3. The manager, *before* anything is exploited rather than after it.
             //
@@ -557,7 +568,9 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             // it, and the two are the same value - so a run can never install the manager of a root it did
             // not resolve. A plan that resolves another flavour is wrong, and the payload resolution refuses
             // before this line rather than here.
-            ensureManager(plan.flavor, unattended = false)
+            // `unattended` rather than a fixed false: the boot gate's run cannot hand off to the phone's
+            // installer, because there is nobody to press it.
+            ensureManager(plan.flavor, unattended = unattended)
 
             // 4. The daemon: downloaded for the plan's flavour, and placed where the shellcode reads it.
             setPhase(InstallPhase.Downloading, app.getString(R.string.universal_step_daemon))
@@ -571,7 +584,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 null
             }
             if (daemon == null) {
-                failUniversal(app.getString(R.string.universal_daemon_failed))
+                failUniversal(UniversalStage.Payload, app.getString(R.string.universal_daemon_failed))
                 return@launch
             }
             appendLog("daemon: ${daemon.absolutePath} (${daemon.length()} bytes)")
@@ -585,7 +598,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
             if (outcome is UniversalRootRun.Outcome.Refused) {
-                failUniversal(outcome.because)
+                failUniversal(UniversalStage.Chain, outcome.because)
                 return@launch
             }
             val code = (outcome as UniversalRootRun.Outcome.Ran).code
@@ -597,7 +610,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 // it. The chain's own account is still printed, because it names which step it stopped at.
                 val after = withContext(Dispatchers.IO) { UniversalRootRun.read() }
                 if (after == UniversalRootRun.Reading.Nothing) {
-                    failUniversal(UniversalRootRun.describe(code))
+                    failUniversal(UniversalStage.Chain, UniversalRootRun.describe(code))
                     return@launch
                 }
                 appendLog("the chain reported: ${UniversalRootRun.describe(code)}")
@@ -615,7 +628,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             // the daemon installs is the signal that works.
             val reading = withContext(Dispatchers.IO) { UniversalRootRun.read() }
             if (reading == UniversalRootRun.Reading.Nothing) {
-                failUniversal(app.getString(R.string.universal_not_live))
+                failUniversal(UniversalStage.Load, app.getString(R.string.universal_not_live))
                 return@launch
             }
             appendLog(UniversalRootRun.describeReading(reading))
@@ -646,13 +659,26 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
      * flow* and a cause in that flow's vocabulary, and this run has neither. What it has is the reason the
      * chain or the kernel gave, and that is what the screen shows.
      */
-    private fun failUniversal(reason: String) {
+    private fun failUniversal(stage: UniversalStage, reason: String) {
         appendLog("[x] $reason")
+        // A real [RunFailure], where this used to set a phase and a sentence and nothing else. Four things read
+        // the stage - the failure card, the step marks, the bar's fraction and the record - so a universal
+        // failure that carried none of them left a screen with a reason on it and no way to tell which of its
+        // four steps had produced it. The stage is this flow's own vocabulary ([UniversalStage]), which is the
+        // point of it: nothing here can say "Transport" about a run that transports nothing.
+        val failure = RunFailure.of(stage, reason)
         mutableState.value = mutableState.value.copy(
             phase = InstallPhase.Failed,
             message = reason,
+            failure = failure,
         )
-        updateHistory { entry -> entry.copy(phase = InstallPhase.Failed) }
+        updateHistory { entry ->
+            entry.copy(
+                phase = InstallPhase.Failed,
+                failureStage = stage,
+                failureReason = failure.reason,
+            )
+        }
         endUniversalNotification()
     }
 
@@ -829,6 +855,50 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 "Retry armed for the next boot, restart requested"
             } else {
                 "Retry armed for the next boot, but the restart was refused"
+            },
+        )
+        return requested
+    }
+
+    /**
+     * Starts the universal root and waits for it, the way [runToCompletion] waits for a payload run.
+     *
+     * The boot gate's entry point: it has to know when the run is over to post the verdict and release the wake
+     * lock, and [startUniversalRun] is fire-and-forget because the screen it was written for has nothing to do
+     * afterwards but draw.
+     */
+    suspend fun runUniversalToCompletion(flavor: KernelSuFlavor, tier: PayloadTier) {
+        startUniversalRun(flavor, tier, unattended = true)
+        installJob?.join()
+    }
+
+    /**
+     * Arms the universal root's retry for the next boot, and asks for the restart.
+     *
+     * [armRetryAfterReboot]'s counterpart for the other flow, and separate from it because the two arms are not
+     * interchangeable: that one arms the payload flow's boot gate, which resolves a cached payload and a
+     * Shizuku promise, and this one arms a run of the plan recorded above. A phone that has never installed a
+     * payload has nothing for that gate to do, which is why this flow needs its own.
+     */
+    suspend fun armUniversalRetryAfterReboot(): Boolean {
+        val plan = AppPreferences.universalPlan(app)
+        if (plan == null) {
+            // Nothing to repeat. Only reachable from a run screen whose run never resolved a plan, which is a
+            // record written before the field existed - refused and said out loud rather than guessed at,
+            // because a guess here installs a KernelSU nobody chose.
+            AppLog.warn(RUN_LOG_TAG, "Universal retry not armed: there is no resolved plan to repeat")
+            return false
+        }
+        AppPreferences.setUniversalRetryAfterReboot(app, currentBootToken())
+        val requested = requestReboot()
+        // The arming is what matters and it has already happened, so a restart that could not be requested is
+        // a line rather than a failure: the phone can still be restarted by hand.
+        AppLog.warn(
+            RUN_LOG_TAG,
+            if (requested) {
+                "Universal retry armed for the next boot: ${plan.flavor.label}, ${plan.tier.name} payload"
+            } else {
+                "Universal retry armed for the next boot, but the restart was refused"
             },
         )
         return requested
@@ -2382,6 +2452,10 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 context = app,
                 message = message,
                 phase = phase,
+                // The flow comes with it, because the chip's word for this stage is the run's own: the payload
+                // flow downloads a support list and the universal root stages a daemon, and the shade has one
+                // word to give either.
+                kind = mutableState.value.kind,
                 progress = installProgress(phase, failureStage = null),
                 runId = activeRunId,
             )
@@ -2398,10 +2472,10 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun startHistory() {
-        // Every run starts here, so this is where the universal flag is cleared as well as set: a payload
-        // run that follows one must not inherit its wording, and there is no other line every run passes
-        // through. [startUniversalRun] sets it immediately after this returns.
-        mutableState.value = mutableState.value.copy(universal = false)
+        // Every run starts here, so this is where the kind is reset as well as set: a payload run that follows
+        // a universal one must not inherit its wording or its answers, and there is no other line every run
+        // passes through. [startUniversalRun] changes it immediately after this returns.
+        mutableState.value = mutableState.value.copy(kind = RunKind.Payload)
         val entry = historyStore.create()
         activeHistoryEntry = entry
         activeRunId = entry.id
