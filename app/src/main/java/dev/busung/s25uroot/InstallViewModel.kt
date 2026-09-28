@@ -516,11 +516,25 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
 
+            // 2. The manager, *before* anything is exploited rather than after it.
+            //
+            // This is where it belongs for a reason a phone showed rather than a theory: a run that roots
+            // first and looks for a manager afterwards leaves a rooted phone whose root nothing can use -
+            // there is no app to grant this one anything, so not even the reading at the end can ask the
+            // kernel. Putting it first is also what the payload flow does, and it means the manager is
+            // already in place by the time the kernel starts answering.
+            //
+            // One daemon and one root: DFRoot's own, which ships in this APK, and whose manager is KernelSU's
+            // because that daemon is a `me.weishu.kernelsu` build. What a run installs and what it loads have
+            // to be the same root, or the phone ends up with a manager that cannot see its own kernel.
+            ensureManager(KernelSuFlavor.KernelSu, unattended = false)
+
             // 2. The daemon. Nothing is downloaded: it ships in this APK, which is the whole reason this path
             //    works with nothing installed and no network.
             setPhase(InstallPhase.Downloading, app.getString(R.string.universal_step_daemon))
-            val daemon = runCatching { withContext(Dispatchers.IO) { UniversalRootRun.stageDaemon(app) } }
-                .getOrNull()
+            val daemon = runCatching {
+                withContext(Dispatchers.IO) { UniversalRootRun.stageDaemon(app) }
+            }.getOrNull()
             if (daemon == null) {
                 failUniversal(app.getString(R.string.universal_daemon_failed))
                 return@launch
@@ -549,11 +563,6 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             //    `0` is its account of itself; the kernel is asked separately, because the two have already
             //    disagreed once on this device and the chain reported success while nothing was loaded.
             setPhase(InstallPhase.LoadingKernelSu, app.getString(R.string.universal_step_load))
-            // The manager, through the same [ensureManager] the payload flow uses - the only thing that
-            // changes is where the flavour comes from. There is no payload on this path to name a version,
-            // so it asks for the one its daemon is built for: DFRoot's ksud is a `me.weishu.kernelsu` build,
-            // and its argv carries that package name to the phone.
-            ensureManager(KernelSuFlavor.KernelSu, unattended = false)
             // And the reading. This is the one part that has to differ from the payload flow: that one
             // verifies through a shell it obtained on the way (Shizuku or the helper), and this path has
             // none - which is why an app has to be told what it *can* read instead. See
@@ -565,7 +574,23 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
             appendLog(UniversalRootRun.describeReading(reading))
+            // The app's KernelSU flavour setting is deliberately **not** written here. That setting is the
+            // resolved payload's to decide - one writer, one source of truth - and a second one is exactly
+            // the state that rule removed; `PayloadDecidesFlavorTest` holds it. It is also why a one-off
+            // install is asked for rather than taken from the setting in the first place.
+            //
+            // What is left is the mismatch, and it is worth saying: a phone now running one kernel while the
+            // setting names another is a pair every later screen describes wrongly - the regular flow loads
+            // the flavour the setting names, offers that flavour's manager and records its payload against it.
+            val running = KernelSuFlavor.KernelSu
+            if (AppPreferences.kernelsuFlavor(app) != running) {
+                appendLog(
+                    "note: this boot now runs ${running.label}, while the app's KernelSU flavour setting still " +
+                        "says ${AppPreferences.kernelsuFlavor(app).label} - change it in Settings to match.",
+                )
+            }
             setPhase(InstallPhase.Installed, app.getString(R.string.universal_installed))
+            endUniversalNotification()
         }
     }
 
@@ -583,6 +608,36 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             message = reason,
         )
         updateHistory { entry -> entry.copy(phase = InstallPhase.Failed) }
+        endUniversalNotification()
+    }
+
+    /**
+     * Ends the run's notification the way the payload flow ends its own: cleared on success, otherwise left
+     * wearing its verdict.
+     *
+     * Without this the shade kept saying "running" about a run that had finished - a line about a phone that
+     * is rooted, with a Stop button that has nothing left to stop, because the action it offers cancels a job
+     * that is already done. Both halves of that are the same omission: the payload flow ends its notification
+     * at the end of the run, and this one never did.
+     */
+    private fun endUniversalNotification() {
+        val succeeded = mutableState.value.phase == InstallPhase.Installed
+        // The run's own record, closed. [finishHistory] is what stamps `completedAtMillis` and clears the
+        // `phase` - and a record that still carries a phase is one a screen draws a live bar for, which is
+        // why history kept saying this run was still going. The payload flow closes its record in the same
+        // place it ends its notification, and this path simply never did.
+        finishHistory(if (succeeded) InstallRunResult.Succeeded else InstallRunResult.Failed)
+        if (runIsUnattended) return
+        if (succeeded) {
+            RunNotification.clear(app)
+        } else {
+            RunNotification.finish(
+                context = app,
+                message = mutableState.value.message,
+                verdict = runVerdict(mutableState.value.phase, busy = false),
+                runId = activeRunId,
+            )
+        }
     }
 
     /**
