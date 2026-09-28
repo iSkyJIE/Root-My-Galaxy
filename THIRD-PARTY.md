@@ -41,6 +41,19 @@ That is also the whole reason `DmcGate.kt` exists: the switch is the app's, the 
 (the vault only answers to a system-uid process), and the point in the boot where the write has to
 happen is a point where the app cannot run at all.
 
+The kernel module's **source and build script** are vendored at [`dirtyfrag-lkm/`](dirtyfrag-lkm/) —
+`dirtyfrag.c`, its `Makefile`, and upstream's `build.sh` — taken from the same repository at 2.2.0. Until now
+this project shipped the eight prebuilt modules without their recipe: nothing here could rebuild one, and a
+KMI could not be added from this tree at all. The script builds each module inside the same DDK images the
+payload repository already pulls (`ghcr.io/ylarod/ddk-min:<kmi>`), and applies the size diet upstream
+documents — `-Os` with unwind tables dropped, then `llvm-objcopy --strip-unneeded` and the `-R` removals that
+take it from 13.4 KiB to about 7.8 KiB. That diet is not tidiness: the module is written through the exploit
+page by page, so its size is a page count.
+
+The eight modules are **verified as taken rather than merely similar**: the copies in
+`app/src/main/cpp/dfroot/ko/` and `dfr/src/main/jni/` are byte-identical to upstream's committed ones, KMI for
+KMI, by sha256.
+
 ## DFRoot — https://github.com/diabl0w/DFRoot
 
 No `LICENSE`, no `NOTICE`, no SPDX header in any of the files below: all rights reserved by default. Taken
