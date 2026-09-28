@@ -53,13 +53,18 @@ object UniversalRoot {
     /**
      * Runs the chain, and blocks until it has finished.
      *
-     * [ksudPath] is a **path on this device**, not an asset: the app stages a daemon
-     * wherever our payload pipeline resolved it and hands the path down, and the
-     * native side copies those bytes into a memfd and patches that anonymous fd's
-     * `/proc/self/fd/<n>` path into the libc shellcode. That is why nothing is
-     * written into `/data/local/tmp`: the daemon is never a file the root side can
-     * name by path, only a descriptor held by this process - which is also why this
-     * process has to stay alive until the call returns.
+     * There is no daemon path in the call any more, and that is upstream's change rather
+     * than an omission: the shellcode reads one fixed path - this app's own data directory
+     * plus `/ksud` - which the app stages before the call. So the daemon is a real file the
+     * root side can name, nothing is handed over through a file descriptor, and this call
+     * no longer needs this process to stay alive for its bytes to be readable.
+     *
+     * [packageName] is the manager package the daemon is told to serve, and it is per
+     * KernelSU: the daemon grants root to whatever this names. It is a parameter rather
+     * than a literal in the native code because the chain is one library for every
+     * flavour now - a compiled-in `me.weishu.kernelsu` meant a KernelSU-Next run handed
+     * its daemon the wrong manager's name, and clap accepts it because to clap the value
+     * is opaque, so nothing failed loudly.
      *
      * [softReboot] is the caller's setting rather than a decision made here: a soft
      * reboot after the module loads is what finishes KernelSU's own start-up, and
@@ -76,7 +81,7 @@ object UniversalRoot {
         hmacKey: ByteArray,
         icvLen: Int,
         senderPort: Int,
-        ksudPath: String,
+        packageName: String,
         softReboot: Boolean,
     ): Int
 }

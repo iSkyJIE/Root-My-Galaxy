@@ -160,13 +160,6 @@ private fun RemoteArtifact.toJson(): JSONObject = JSONObject().apply {
     sha256?.let { put("sha256", it) }
 }
 
-private fun JSONObject.artifact(): RemoteArtifact = RemoteArtifact(
-    url = getString("url"),
-    size = getLong("size"),
-    verifySize = optBoolean("verifySize", true),
-    sha256 = optString("sha256").trim().takeIf(String::isNotEmpty),
-)
-
 /**
  * The identity of a cached payload.
  *

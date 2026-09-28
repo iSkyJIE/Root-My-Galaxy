@@ -485,7 +485,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
      * `LoadingKernelSu`), so the screen that draws a payload run draws this one with no change at all: the
      * step rows, the progress and the Stop button come from the phase the state is in.
      */
-    fun startUniversalRun() {
+    fun startUniversalRun(flavor: KernelSuFlavor, tier: PayloadTier) {
         if (installJob?.isActive == true) return
         installJob = viewModelScope.launch {
             startHistory()
@@ -516,36 +516,71 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
 
-            // 2. The manager, *before* anything is exploited rather than after it.
+            // 2. Which daemon this run will stage, resolved before anything is downloaded or installed.
             //
-            // This is where it belongs for a reason a phone showed rather than a theory: a run that roots
-            // first and looks for a manager afterwards leaves a rooted phone whose root nothing can use -
-            // there is no app to grant this one anything, so not even the reading at the end can ask the
-            // kernel. Putting it first is also what the payload flow does, and it means the manager is
-            // already in place by the time the kernel starts answering.
+            // This is where the tier stops being a question and becomes a fact. It is deliberately *ahead*
+            // of both the manager and the download, for one reason: the daemon is what decides which
+            // KernelSU this phone is about to be running, and the manager has to be the manager **for that
+            // one**, in place, before the kernel starts answering. After that there is no app on the phone
+            // to grant this one anything, so not even the reading at the end can ask the kernel.
             //
-            // One daemon and one root: DFRoot's own, which ships in this APK, and whose manager is KernelSU's
-            // because that daemon is a `me.weishu.kernelsu` build. What a run installs and what it loads have
-            // to be the same root, or the phone ends up with a manager that cannot see its own kernel.
-            ensureManager(KernelSuFlavor.KernelSu, unattended = false)
+            // Resolving is a network read (the catalog, or the generic feed) and it downloads nothing, so a
+            // refusal here - no entry for this phone, or a generic daemon with no module for this kernel -
+            // costs the sentence that says so and not a single byte of payload.
+            // The `Downloading` phase rather than a second `Checking`, because this is the step the step list
+            // labels "Stage the daemon" - resolving and fetching are one step to a person - and a second
+            // check would leave the row above it lit while this one worked.
+            setPhase(InstallPhase.Downloading, app.getString(R.string.universal_step_payload))
+            val plan = runCatching {
+                withContext(Dispatchers.IO) { UniversalRootRun.plan(app, flavor, tier) }
+            }.getOrElse { error ->
+                failUniversal(error.message ?: app.getString(R.string.universal_no_payload))
+                return@launch
+            }
+            appendLog("[*] ${plan.description}")
+            // The tier's own trade-off, said before the run rather than discovered from a log afterwards.
+            plan.caveat?.let { appendLog("note: $it") }
+            // The app's record of which KernelSU the next run stages. This is the one writer of the flavour -
+            // the same file, and the same two writes, that the device tier reaches through
+            // [rememberResolvedPayload] - so the manager installed below, the release the manager rows offer
+            // and the module root put back on boot all follow the daemon that is actually staged.
+            rememberResolvedKernelSu(app, plan.flavor, plan.version)
 
-            // 2. The daemon. Nothing is downloaded: it ships in this APK, which is the whole reason this path
-            //    works with nothing installed and no network.
+            // 3. The manager, *before* anything is exploited rather than after it.
+            //
+            // It is where it belongs for a reason a phone showed rather than a theory: a run that roots first
+            // and looks for a manager afterwards leaves a rooted phone whose root nothing can use. Putting it
+            // first is also what the payload flow does, and it means the manager is already in place by the
+            // time the kernel starts answering.
+            //
+            // The flavour is the resolved plan's, not the one that was asked for: resolving is what decides
+            // it, and the two are the same value - so a run can never install the manager of a root it did
+            // not resolve. A plan that resolves another flavour is wrong, and the payload resolution refuses
+            // before this line rather than here.
+            ensureManager(plan.flavor, unattended = false)
+
+            // 4. The daemon: downloaded for the plan's flavour, and placed where the shellcode reads it.
             setPhase(InstallPhase.Downloading, app.getString(R.string.universal_step_daemon))
             val daemon = runCatching {
-                withContext(Dispatchers.IO) { UniversalRootRun.stageDaemon(app) }
-            }.getOrNull()
+                withContext(Dispatchers.IO) { UniversalRootRun.stage(app, plan) { line -> appendLog(line) } }
+            }.getOrElse { error ->
+                // Said rather than swallowed: "the daemon could not be staged" is true of a missing entry, a
+                // missing network and a device with no payload of its own, and those are three different
+                // things to do about it.
+                appendLog("[x] ${error.message}")
+                null
+            }
             if (daemon == null) {
                 failUniversal(app.getString(R.string.universal_daemon_failed))
                 return@launch
             }
-            appendLog("daemon: ${daemon.absolutePath} (${daemon.length()} bytes, shipped in this APK)")
+            appendLog("daemon: ${daemon.absolutePath} (${daemon.length()} bytes)")
 
             // 3. The exploit and the module. One call: the chain patches the vendor libraries, loads the
             //    module and starts the daemon, and reports every step as it goes.
             setPhase(InstallPhase.Exploiting, app.getString(R.string.universal_step_exploit))
             val outcome = withContext(Dispatchers.IO) {
-                UniversalRootRun.run(app, daemon, AppPreferences.restartAfterRoot(app)) { line ->
+                UniversalRootRun.run(app, daemon, plan.flavor, AppPreferences.restartAfterRoot(app)) { line ->
                     appendLog(line)
                 }
             }
@@ -555,8 +590,18 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             }
             val code = (outcome as UniversalRootRun.Outcome.Ran).code
             if (code != 0) {
-                failUniversal(UniversalRootRun.describe(code))
-                return@launch
+                // The chain's code is its own account of its own steps, and it is not the verdict. Its success
+                // test is "the daemon exited ok" within a fixed window, and this daemon does its work - module
+                // loaded, `su` installed - and then takes longer than that window to finish. So the phone is
+                // asked before the run is called a failure, and only a phone that shows nothing readable fails
+                // it. The chain's own account is still printed, because it names which step it stopped at.
+                val after = withContext(Dispatchers.IO) { UniversalRootRun.read() }
+                if (after == UniversalRootRun.Reading.Nothing) {
+                    failUniversal(UniversalRootRun.describe(code))
+                    return@launch
+                }
+                appendLog("the chain reported: ${UniversalRootRun.describe(code)}")
+                appendLog(UniversalRootRun.describeReading(after))
             }
 
             // 4. Load KernelSU - and the reading that decides whether this run is a success. The chain's own
@@ -582,7 +627,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             // What is left is the mismatch, and it is worth saying: a phone now running one kernel while the
             // setting names another is a pair every later screen describes wrongly - the regular flow loads
             // the flavour the setting names, offers that flavour's manager and records its payload against it.
-            val running = KernelSuFlavor.KernelSu
+            val running = plan.flavor
             if (AppPreferences.kernelsuFlavor(app) != running) {
                 appendLog(
                     "note: this boot now runs ${running.label}, while the app's KernelSU flavour setting still " +

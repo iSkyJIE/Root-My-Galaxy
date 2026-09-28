@@ -20,23 +20,26 @@ import java.security.SecureRandom
  * an **unprivileged** `IpSecManager` transform — the technique DirtyInit found and DFRoot used. On a phone
  * with no root at all and nothing installed, this is a root path that starts from this APK alone.
  *
- * ## The daemon is DFRoot's own, and that is a measured decision
+ * ## The daemon comes from the payload, in one of two tiers
  *
- * This first carried the daemon out of our payload, and it did not work here — not the KernelSU-Next build
- * and not the KernelSU one. The chain handed each of them the same argv and each started and died in
- * silence, leaving no module and no log line, while DFRoot's own ksud in the same chain, on the same boot,
- * logged a complete late-load and rooted the phone.
+ * The daemon is not bundled: it is downloaded from the payload repository for the flavour the run asks for,
+ * and placed where the shellcode reads it. That is what keeps the argv and the daemon a matched pair — the
+ * chain passes `late-load --package-name <that flavour's manager>` and nothing else, so the daemon has to be
+ * one built for that flavour's line.
  *
- * The reason is what the two daemons are built for. Theirs late-loads a kernel module it carries inside
- * itself, which is what this invocation asks for: `late-load --package-name me.weishu.kernelsu
- * --stage-from /data/system/ksud --ro-partitions`, with no path to a module anywhere in it. Our payload's
- * daemons are built for the *regular* flow, where the app stages files around them first. Feeding one to
- * this chain is asking a daemon to do a job its build was not assembled for, and the failure is silent in
- * the worst way — the chain reports success and the phone is not rooted.
+ * And because the KernelSU half of a payload is the one half that does **not** have to be device-specific,
+ * there are two things it can be. They are offered as a choice rather than guessed at ([PayloadTier]):
  *
- * So the daemon ships in this APK (`assets/dfroot-ksud`), as DFRoot ships it, and that is the one piece of
- * their app this port carries as bytes. It is recorded in THIRD-PARTY.md with what it is and where it came
- * from, because a kernel-module-carrying binary in an APK is a fact that has to be written down.
+ * - **Device** — the feed's entry for this exact phone, whose module was built for the kernel release it
+ *   runs. The strongest pairing available, so it is the default.
+ * - **Generic** — the KMI-generic daemon for the same flavour, carrying a module per KMI and so covering a
+ *   whole family of phones. What it has instead of a device-specific module is the daemon's own `vermagic`
+ *   rewrite: `load_module()` replaces the module's vermagic with the value the running kernel requires and
+ *   retries `init_module`, which is what lets one artifact cover a KMI family.
+ *
+ * Neither is used for the other's device behind anyone's back, and a tier that cannot serve this phone says
+ * so *before* anything is downloaded: the device tier refuses when the feed has no entry for this phone, and
+ * the generic tier refuses when its entry carries no module for this phone's KMI.
  *
  * ## Running it
  *
@@ -48,21 +51,19 @@ import java.security.SecureRandom
 internal object UniversalRootRun {
 
     /**
-     * The daemon, as DFRoot builds it: a `ksud` for `me.weishu.kernelsu` that contains its own kernel module.
+     * The daemon's name, under the app's own data directory.
      *
-     * Taken from https://github.com/diabl0w/DFRoot (`app/src/main/assets/ksud`, 5,998,608 bytes) — see
-     * THIRD-PARTY.md. It is the daemon their app uses, and the only one measured to complete this chain on
-     * this device.
-     */
-    private const val DAEMON_ASSET = "dfroot-ksud"
-
-    /**
-     * Where that copy is put, in this app's own files directory.
+     * A `ksud` for `me.weishu.kernelsu` that loads its kernel module itself, built by **our payload
+     * repository** for this device's kernel rather than bundled in this APK. Owning the bytes is what makes
+     * this path work: the daemon installs itself from the file the app stages, so nothing depends on a
+     * manager APK's `libksud.so` being present - which is what left `/system/bin/su` at zero bytes when the
+     * manager happened not to carry one.
      *
-     * Private storage and not the temp directory: the app has to read these bytes itself to put them in a
-     * memfd, and `/data/local/tmp` is not readable by an ordinary app at all on this platform.
+     * Upstream builds one daemon and their fork adds two options to it (`--ro-partitions`, `--soft-reboot`);
+     * both of those things the app does itself, so the upstream build is what this drives, and `libc.S`
+     * passes the four arguments it accepts and nothing more.
      */
-    private const val DAEMON = "universal-ksud"
+    private const val DAEMON = "ksud"
 
     /** The exploit's own mutex, which is how a hook that is already in this boot is read. */
     internal const val ARMED_MARKER = "/dev/df"
@@ -112,7 +113,10 @@ internal object UniversalRootRun {
      */
     internal fun read(): Reading = when {
         rootIsLive() -> Reading.Live
-        runCatching { File(SU_PATH).exists() }.getOrDefault(false) -> Reading.SuInstalled
+        // Bytes, not existence. A run whose daemon found nothing to install itself from left a 0-byte
+        // `/system/bin/su` on this device, and an existence test called that a completed daemon and reported
+        // the boot as rooted.
+        runCatching { File(SU_PATH).length() > 0 }.getOrDefault(false) -> Reading.SuInstalled
         else -> Reading.Nothing
     }
 
@@ -138,7 +142,7 @@ internal object UniversalRootRun {
     internal fun describe(code: Int): String = when (code) {
         0 -> "the chain finished: the patches applied and the daemon started"
         1 -> "the daemon exited with an error"
-        2 -> "a check failed - the log names it"
+        2 -> "the chain stopped waiting for the daemon to exit, so it cannot say - the phone decides"
         3 -> "the patches did not land"
         else -> "unexpected result code $code"
     }
@@ -165,16 +169,132 @@ internal object UniversalRootRun {
     }
 
     /**
-     * Copies the bundled daemon into this app's own storage and makes it executable.
+     * Which daemon a run stages, resolved but not yet downloaded.
      *
-     * `.tmp` then rename, so a kill in the middle cannot leave a half-written daemon where the next run
-     * would take it for a whole one. Overwritten every run, so a changed APK cannot leave the previous
-     * daemon behind.
+     * Resolving and downloading are two steps because the manager sits between them. The daemon is what says
+     * which KernelSU release this run is about to load, and the manager has to be in place - and be the one
+     * that matches - *before* the kernel starts answering: after that there is no app on the phone to grant
+     * this one anything, so not even the reading at the end can ask the kernel. A plan answers "which
+     * KernelSU" without a download, so the manager step is right even when the download is slow or fails.
+     *
+     * The type is sealed rather than a nullable profile plus flags, so a caller cannot stage a plan while
+     * forgetting to record the flavour it resolved, or describe a generic daemon as a device one.
      */
-    internal fun stageDaemon(context: Context): File {
-        val destination = File(context.filesDir, DAEMON)
+    internal sealed class Plan {
+        /** The root this run will load, which decides the manager. */
+        abstract val flavor: KernelSuFlavor
+
+        /** The KernelSU release the daemon was built from, when the feed declares one. */
+        abstract val version: String?
+
+        /** The artifact to fetch. The only difference between the tiers at this level. */
+        abstract val artifact: RemoteArtifact
+
+        /** One line naming exactly what will be staged, for the log and the confirmation. */
+        abstract val description: String
+
+        /** What a person has to know about this choice before it is used, or null when there is nothing. */
+        abstract val caveat: String?
+
+        /** The feed's entry for this phone: a module built for the kernel release it runs. */
+        class Device(val profile: TargetProfile) : Plan() {
+            override val flavor: KernelSuFlavor get() = profile.flavor
+            override val version: String? get() = profile.kernelSuVersion
+            override val artifact: RemoteArtifact get() = profile.kernelSu
+            override val description: String
+                get() = "device payload: ${profile.displayName} (${profile.flavor.label})"
+
+            override val caveat: String?
+                get() = when (profile.kernelMatch(DeviceSnapshot.current())) {
+                    // Matched on the three-part version alone, so the entry documents this kernel *version*
+                    // rather than this build: its module may be the one for a regional sibling. Worth saying,
+                    // because it is exactly the case where the device tier is less specific than it sounds.
+                    KernelMatch.Version ->
+                        "this entry lists the kernel version rather than this build's exact release, so its " +
+                            "module may be built for a sibling build of the same version"
+                    else -> null
+                }
+        }
+
+        /** A daemon carrying a module per KMI, so it covers a family of kernels rather than this phone. */
+        class Generic(val daemon: GenericDaemon) : Plan() {
+            override val flavor: KernelSuFlavor get() = daemon.flavor
+            override val version: String? get() = daemon.version
+            override val artifact: RemoteArtifact get() = daemon.daemon
+            override val description: String
+                get() = "generic payload: ${daemon.flavor.label}, carrying ${daemon.coverage}"
+            override val caveat: String
+                get() = "a shared build for every ${daemon.flavor.label} kernel in ${daemon.coverage}: the " +
+                    "module it loads is chosen by the running kernel's KMI rather than built for this phone"
+        }
+    }
+
+    /**
+     * Resolves which daemon this run will stage. Downloads nothing.
+     *
+     * A tier that cannot serve this phone throws with the reason, before the manager step and before a byte is
+     * fetched - so a refusal costs nothing but the sentence explaining it. The refusals are deliberately
+     * different sentences: "the feed has no entry for this phone" and "its generic daemon carries no module
+     * for this kernel" call for different things from whoever reads them.
+     */
+    internal fun plan(context: Context, flavor: KernelSuFlavor, tier: PayloadTier): Plan {
+        val repository = PayloadRepository(context)
+        val snapshot = DeviceSnapshot.current()
+        return when (tier) {
+            PayloadTier.Device -> {
+                val profile = repository.loadTargets().resolveFor(snapshot, flavor)
+                if (profile == null) {
+                    throw IllegalStateException(
+                        "no ${flavor.label} payload for ${snapshot.model} on kernel " +
+                            "${snapshot.kernelVersion} in the enabled sources - choose the generic payload, or " +
+                            "add a payload for this build to a source",
+                    )
+                }
+                Plan.Device(profile)
+            }
+
+            PayloadTier.Generic -> {
+                val loaded = repository.loadGenericDaemons()
+                val covering = loaded.daemons.covering(flavor, snapshot.kmi)
+                if (covering == null) {
+                    val published = loaded.daemons.firstOrNull { it.flavor == flavor }
+                    val because = when {
+                        published != null ->
+                            "the generic ${flavor.label} daemon carries ${published.coverage}, and this " +
+                                "phone's kernel is ${snapshot.kmi ?: snapshot.kernelRelease}, so it has no " +
+                                "module for this phone"
+                        loaded.failures.isNotEmpty() -> loaded.failures.joinToString("\n")
+                        else -> "no generic ${flavor.label} daemon is published by the enabled sources"
+                    }
+                    throw IllegalStateException("No generic payload: $because")
+                }
+                Plan.Generic(covering)
+            }
+        }
+    }
+
+    /**
+     * Downloads the plan's daemon and puts it where the chain reads it, and makes it executable.
+     *
+     * The one path the shellcode knows is this app's own data directory, and placing the file there is the
+     * app's job and only the app's: the chain cannot create a file under `/data` at all, which is what every
+     * earlier attempt to have it stage its own daemon ran into.
+     *
+     * `.tmp` then rename, so a kill in the middle cannot leave a half-written daemon where the next run would
+     * take it for a whole one. Overwritten every run.
+     */
+    internal fun stage(context: Context, plan: Plan, report: (String) -> Unit): File {
+        val repository = PayloadRepository(context)
+        // The daemon alone, for both tiers. This path's exploit is the chain compiled into this APK, so a
+        // device entry's exploit artifact would be fetched, verified and thrown away - and a failure in that
+        // download would stop a run that never uses it.
+        val source = repository.downloadDaemon(plan.artifact, plan.flavor) { line -> report(line) }
+
+        // The chain's own path: the app's data directory, not its `files` directory - where the regular
+        // flow's copies go - and not the temp directory, which no app may write on this platform.
+        val destination = File(context.filesDir.parentFile, DAEMON)
         val temporary = File(destination.path + ".tmp")
-        context.assets.open(DAEMON_ASSET).use { input ->
+        source.inputStream().use { input ->
             temporary.outputStream().use { output -> input.copyTo(output) }
         }
         if (!temporary.renameTo(destination)) {
@@ -194,6 +314,7 @@ internal object UniversalRootRun {
     internal fun run(
         context: Context,
         daemon: File,
+        flavor: KernelSuFlavor,
         softReboot: Boolean,
         report: (String) -> Unit,
     ): Outcome {
@@ -203,7 +324,7 @@ internal object UniversalRootRun {
             )
         }
         val code = try {
-            drive(context, daemon, softReboot, report)
+            drive(context, daemon, flavor, softReboot, report)
         } catch (error: Throwable) {
             return Outcome.Refused("The chain could not start: ${error.javaClass.simpleName}: ${error.message}")
         }
@@ -227,6 +348,7 @@ internal object UniversalRootRun {
     private fun drive(
         context: Context,
         daemon: File,
+        flavor: KernelSuFlavor,
         softReboot: Boolean,
         report: (String) -> Unit,
     ): Int {
@@ -262,7 +384,9 @@ internal object UniversalRootRun {
                 hmacKey = macKey,
                 icvLen = ICV_BITS / 8,
                 senderPort = senderPort,
-                ksudPath = daemon.absolutePath,
+                // The manager this flavour's daemon serves. One library, so it travels as a value - see
+                // [UniversalRoot.nativeRunAll].
+                packageName = flavor.managerPackage,
                 softReboot = softReboot,
             )
         } finally {

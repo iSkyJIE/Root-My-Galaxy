@@ -103,7 +103,18 @@ class InstallActivity : ComponentActivity() {
         // screen is that a person learns one of them. Taken off the intent like the request below, because
         // a run is not something to repeat because the screen was turned.
         val universal = savedInstanceState == null && intent.getBooleanExtra(EXTRA_UNIVERSAL, false)
+        // Which KernelSU that run installs, as the answer the card asked for. An absent or unreadable flavour
+        // falls back to the app's setting rather than refusing: a launch from somewhere that does not know
+        // about flavours is still a request to root this phone.
+        val universalFlavor = intent.getStringExtra(EXTRA_UNIVERSAL_FLAVOR)
+        // Which payload that run stages, as the answer the card's second question gave. Read on the same
+        // terms: an absent or unreadable tier falls back to the device's own payload, which is the tier that
+        // refuses rather than the one that loads something built for another phone.
+        val universalTier = PayloadTier.fromId(intent.getStringExtra(EXTRA_UNIVERSAL_TIER).orEmpty())
+            ?: PayloadTier.Device
         intent.removeExtra(EXTRA_UNIVERSAL)
+        intent.removeExtra(EXTRA_UNIVERSAL_FLAVOR)
+        intent.removeExtra(EXTRA_UNIVERSAL_TIER)
         // Taken off the intent for the same reason the install request is, and read once: a tap on a run
         // notification names the run it was about, and what this screen can do with that name does not
         // change while it is open.
@@ -165,10 +176,14 @@ class InstallActivity : ComponentActivity() {
                     startActivity(runRecordIntent(this@InstallActivity, wanted))
                     finish()
                 }
-                LaunchedEffect(startInstall, universal, selectionId, answer) {
+                LaunchedEffect(startInstall, universal, universalFlavor, universalTier, selectionId, answer) {
                     when {
                         answer != null -> startAnsweredRun(answer, selectionId)
-                        universal -> installViewModel.startUniversalRun()
+                        universal -> installViewModel.startUniversalRun(
+                            KernelSuFlavor.fromId(universalFlavor)
+                                ?: AppPreferences.kernelsuFlavor(this@InstallActivity),
+                            universalTier,
+                        )
                         startInstall -> installViewModel.install(selectionId)
                     }
                 }
@@ -272,8 +287,14 @@ class InstallActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (!intent.getBooleanExtra(EXTRA_UNIVERSAL, false)) return
+        val flavor = KernelSuFlavor.fromId(intent.getStringExtra(EXTRA_UNIVERSAL_FLAVOR))
+            ?: AppPreferences.kernelsuFlavor(this)
+        val tier = PayloadTier.fromId(intent.getStringExtra(EXTRA_UNIVERSAL_TIER).orEmpty())
+            ?: PayloadTier.Device
         intent.removeExtra(EXTRA_UNIVERSAL)
-        installViewModel.startUniversalRun()
+        intent.removeExtra(EXTRA_UNIVERSAL_FLAVOR)
+        intent.removeExtra(EXTRA_UNIVERSAL_TIER)
+        installViewModel.startUniversalRun(flavor, tier)
     }
 
     companion object {
@@ -290,6 +311,12 @@ class InstallActivity : ComponentActivity() {
          * a screen opened with this set is the same screen - same steps, same bar, same Stop.
          */
         const val EXTRA_UNIVERSAL = "universal_root"
+
+        /** Which KernelSU that run installs, by [KernelSuFlavor.id]: the answer the card asked for. */
+        const val EXTRA_UNIVERSAL_FLAVOR = "universal_root_flavor"
+
+        /** Which payload it stages, by [PayloadTier.name]: the card's second answer. */
+        const val EXTRA_UNIVERSAL_TIER = "universal_root_tier"
     }
 }
 
@@ -317,10 +344,11 @@ internal val installerSteps = listOf(
  * The same four steps, worded for the run that fetches nothing.
  *
  * Only the two steps whose payload-run text would be wrong are changed: the check is the same check, and the
- * last step is the same load. `Download` is the one that cannot stand - nothing is downloaded, the daemon
- * ships in this APK - and `Kernel exploit` says "Get temporary root" on a path whose whole point is that no
- * temporary root is involved. A step list that describes a different run than the one happening is worse
- * than no step list, because it reads as the run being further along than it is.
+ * last step is the same load. `Download` becomes the one step that both resolves and stages - this run picks
+ * a payload before it fetches anything, which a payload run never does - and `Kernel exploit` says "Get
+ * temporary root" on a path whose whole point is that no temporary root is involved. A step list that
+ * describes a different run than the one happening is worse than no step list, because it reads as the run
+ * being further along than it is.
  */
 internal val universalInstallerSteps = listOf(
     InstallerStep(R.string.step_support_title, R.string.step_support_detail_universal, Icons.Rounded.FactCheck),

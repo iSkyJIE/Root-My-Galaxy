@@ -25,13 +25,13 @@ struct Reporter { JNIEnv *env; jobject obj; };
 /* The reporter's `report(String)`, resolved from the object we were handed rather than
  * from a class name.
  *
- * Upstream resolved it in JNI_OnLoad, by `FindClass("df/root/IReporter")`. That is a
+ * Upstream resolves it in JNI_OnLoad, by `FindClass("df/root/IReporter")`. That is a
  * second copy of a Java declaration living in C, and when the two disagree the failure
  * is not a missing callback: `FindClass` throws, the `GetMethodID` after it is called
  * with an exception pending, and the JVM aborts the process -
  * `JNI DETECTED ERROR IN APPLICATION` inside `System.loadLibrary`, which reads like a
- * broken build rather than a class that moved. It did exactly that here, on the first
- * tap, because the port renamed the class and the name in this file went with the code
+ * broken build rather than a class that moved. It did exactly that here on the first
+ * tap, because the port renamed the class and the name in this file came with the code
  * it was copied from.
  *
  * Asking the object for its own class cannot go stale that way: whatever Kotlin class
@@ -323,8 +323,8 @@ extern char libc_start[];
 extern char libc_data[];
 extern uint32_t libc_len;
 extern char libc_first_inst_copy[];
-extern uint32_t libc_ksud_proc_path_off;
 extern uint32_t libc_soft_reboot_off;
+extern uint32_t libc_package_off;
 
 int find_hook_target(const char *lib, const char *sym,
                      uint64_t *hook, uint64_t *payload, uint32_t *first_insn);
@@ -547,16 +547,17 @@ static int createOrphanProcess(struct Reporter *reporter) {
 
 static int has_marker(const char *p) { return access(p, F_OK) == 0; }
 
-/* Renamed from DFRoot's `Java_df_root_MainActivity_nativeRunAll`: the JNI symbol is
- * derived from the declaring class, so the only change a port into another package
- * needs is the name of that class. Everything below is theirs. */
 JNIEXPORT jint JNICALL
+/* Renamed from DFRoot's `Java_df_root_MainActivity_nativeRunAll`: the JNI symbol is
+ * derived from the declaring class, so the only change a port into another package needs
+ * is the name of that class. Everything below is theirs. */
 Java_dev_busung_s25uroot_UniversalRoot_nativeRunAll(JNIEnv *env, jclass clz __attribute__((unused)),
                                                jobject reporter_obj,
                                                jint encapPort, jint spi,
                                                jbyteArray aesCbcKey,
                                                jbyteArray hmacKey, jint icvLen,
-                                               jint senderPort, jstring jksudPath,
+                                               jint senderPort,
+                                               jstring jpackage_name,
                                                jboolean softReboot) {
     struct Reporter ro = {.env = env, .obj = reporter_obj}, *reporter = &ro;
 
@@ -574,32 +575,19 @@ Java_dev_busung_s25uroot_UniversalRoot_nativeRunAll(JNIEnv *env, jclass clz __at
     memcpy(g_hmac_key, hb, 32);
     (*env)->ReleaseByteArrayElements(env, hmacKey, hb, JNI_ABORT);
 
-    // Create memfd holding ksud; patch its /proc/self/fd/<n> path into libc.
-    int ksud_mfd = -1;
-    {
-        const char *ksud_path = (*env)->GetStringUTFChars(env, jksudPath, NULL);
-        int src = open(ksud_path, O_RDONLY | O_CLOEXEC);
-        (*env)->ReleaseStringUTFChars(env, jksudPath, ksud_path);
-        if (src >= 0) {
-            ksud_mfd = (int)syscall(__NR_memfd_create, "ksud", 0);
-            if (ksud_mfd >= 0) {
-                char buf[4096]; ssize_t n;
-                while ((n = read(src, buf, sizeof(buf))) > 0) {
-                    for (ssize_t w = 0; w < n; ) {
-                        ssize_t r = write(ksud_mfd, buf + w, (size_t)(n - w));
-                        if (r <= 0) break;
-                        w += r;
-                    }
-                }
-                char proc_path[64];
-                snprintf(proc_path, sizeof(proc_path), "/proc/%d/fd/%d",
-                         getpid(), ksud_mfd);
-                strncpy(libc_data + libc_ksud_proc_path_off, proc_path, 63);
-                libc_data[libc_ksud_proc_path_off + 63] = '\0';
-                libc_data[libc_soft_reboot_off] = softReboot ? 1 : 0;
-                REPORTLN("ksud mfd: %s", proc_path);
-            }
-            close(src);
+    libc_data[libc_soft_reboot_off] = softReboot ? 1 : 0;
+
+    // The package the daemon serves, written into the slot the argv points at. Absent leaves the slot as the
+    // linker made it - empty - which a daemon would take for a package named "" rather than for a default,
+    // so the caller always passes one; the check is here because a null jstring would otherwise be a
+    // GetStringUTFChars on nothing.
+    if (jpackage_name != NULL) {
+        const char *pkg = (*env)->GetStringUTFChars(env, jpackage_name, NULL);
+        if (pkg != NULL) {
+            strncpy(libc_data + libc_package_off, pkg, 63);
+            libc_data[libc_package_off + 63] = '\0';
+            REPORTLN("daemon serves: %s", pkg);
+            (*env)->ReleaseStringUTFChars(env, jpackage_name, pkg);
         }
     }
 
@@ -626,38 +614,48 @@ Java_dev_busung_s25uroot_UniversalRoot_nativeRunAll(JNIEnv *env, jclass clz __at
     } markers[] = {
         { "/dev/df",    "1. libc++: mutex acquired, forking"       },
         { "/dev/dfm0",  "2. libc: module loaded - selinux permissive" },
-        { "/dev/dfm1",  "3. reading ksud from memfd"               },
-        { "/dev/dfm2",  "4. staging ksud files"                    },
-        { "/dev/dfm3",  "5. switching namespace"                   },
-        { "/dev/dfm4",  "6. bind mounting logcat"                  },
-        { "/dev/dfm5",  "7. launching ksud"                        },
+        { "/dev/dfm1",  "3. switching namespace"                   },
+        { "/dev/dfm2",  "4. bind mounting logcat"                  },
+        { "/dev/dfm3",  "5. ksud exited ok"                        },
+        { "/dev/dfm4",  "5. ksud exited with error"                },
     };
     int seen[sizeof(markers)/sizeof(markers[0])] = {0};
 
-    for (int elapsed = 0; elapsed < 10000; elapsed += 10) {
+    // Longer than upstream's 30 seconds, and for a measured reason: this daemon's late-load does not finish
+    // in that window on this device. It had already loaded the module and installed `su` when the window
+    // expired, and the chain reported "check logs" - a failure on a phone that was rooted. Waiting is cheap
+    // here, because the alternative is a run that roots and then says it did not.
+    //
+    // Named rather than written twice, because the message at the end of this loop reports how long it
+    // waited - and the loop's own `elapsed` is scoped to the loop, which is how the first version of that
+    // message failed to compile.
+    const int kWaitMillis = 90000;
+    for (int elapsed = 0; elapsed < kWaitMillis; elapsed += 10) {
         usleep(10000);
         for (size_t j = 0; j < sizeof(markers)/sizeof(markers[0]); j++) {
             if (!seen[j] && has_marker(markers[j].path)) {
                 seen[j] = 1;
                 REPORTLN("%s", markers[j].msg);
-                if (strcmp(markers[j].path, "/dev/dfm5") == 0) {
-                    // fork succeeded — poll 300ms for execve failure
-                    for (int w = 0; w < 1000; w += 10) {
-                        usleep(10000);
-                        if (has_marker("/dev/dfm6")) {
-                            REPORTLN("***FAILED***: ksud exited with error");
-                            rc = 1;
-                            goto done;
-                        }
-                    }
+                if (strcmp(markers[j].path, "/dev/dfm3") == 0) {
                     REPORTLN("***SUCCESS***");
                     rc = 0;
+                    goto done;
+                }
+                if (strcmp(markers[j].path, "/dev/dfm4") == 0) {
+                    REPORTLN("***FAILED***: ksud exited with error");
+                    rc = 1;
                     goto done;
                 }
             }
         }
     }
-    REPORTLN("***FAILED***: check logs");
+    // The wait expired without either of the daemon's exit markers. That is **not** a step that failed, and
+    // saying so was actively misleading: this line sits directly under "4. bind mounting logcat", so
+    // "***FAILED***" read as the bind mount having failed - and the bind mount is the last thing that
+    // *succeeded*, since its marker is written after it. What has actually happened is that the daemon is
+    // still working, past a window this chain does not get to decide the length of.
+    REPORTLN("***UNKNOWN***: the daemon had not exited after %ds, so the chain cannot say",
+             kWaitMillis / 1000);
 done:
     if (rc == 3) REPORTLN("***FAILED***: failed to patch files");
     REPORTLN("\n=== cleanup ===");
@@ -666,6 +664,5 @@ done:
     fadvise_drop(kCrashDump, reporter);
     free(libcxx_r.shell_orig);
     free(libc_r.shell_orig);
-    if (ksud_mfd >= 0) close(ksud_mfd);
     return rc;
 }

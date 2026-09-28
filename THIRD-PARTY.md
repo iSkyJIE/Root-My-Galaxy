@@ -53,7 +53,7 @@ from an **ordinary app**, with no system-uid helper, no `packages.xml` inject an
 | `app/src/main/cpp/dfroot/{libc.S,libcxx.S,elf_parser.c,splicehelper.c,include.inc,logging.h,aes256.h,hmac_sha256.h,splicehelper}` | `app/src/main/jni/…` | Verbatim |
 | `app/src/main/cpp/dfroot/ko/dirtyfrag-android*.ko` | `app/src/main/jni/ko/…` | Bytes, unchanged |
 | `app/src/main/cpp/dfroot/CMakeLists.txt` | `app/src/main/jni/CMakeLists.txt` | Build paths rewritten for a subdirectory; the two custom steps and the `.incbin` layout are theirs |
-| `app/src/main/assets/dfroot-ksud` | `app/src/main/assets/ksud` | **Bytes, unchanged** — 5,998,608 bytes |
+| *(no longer shipped)* | `app/src/main/assets/ksud` | **Their daemon is not in this repository any more.** It was, and it was replaced by one our payload repository builds for the device's own kernel — see the note below |
 | `UniversalRoot.kt`, `UniversalRootRun.kt`, `UniversalRootUi.kt` | — | **Ours.** The `IpSecManager` driver is a rewrite of their `MainActivity`/`BootReceiver`: the same calls in the same order, but written here rather than ported, which is worth knowing when it misbehaves |
 
 **Why the daemon is bundled, against this project's own preference.** Everywhere else, the daemon comes

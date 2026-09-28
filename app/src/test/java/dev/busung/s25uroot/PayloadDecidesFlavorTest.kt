@@ -52,12 +52,40 @@ class PayloadDecidesFlavorTest {
                     .map { (index, _) -> "${file.name}:${index + 1}" }
             }
 
+        // One **module**, not one call site. That file has two writers because the app resolves two kinds of
+        // thing - a device entry's payload and a generic KMI daemon - and both are fed by whatever the run is
+        // about to stage. What the rule forbids is a *third* place writing it, which is what a setting
+        // standing beside the payload was; a second writer inside the file that owns the rule is not a second
+        // source of truth, and `duplicates in the writer` below says it is only ever those two.
         assertEquals(
-            "the flavour must be written from exactly one call site - the resolved payload - because a " +
-                "second writer is a second source of truth, which is the state this rule removed",
+            "the flavour must be written from exactly one module - the resolved payload - because a second " +
+                "writer is a second source of truth, which is the state this rule removed; found " +
+                writers.joinToString(", "),
             listOf("ManagerOffer.kt"),
-            writers.map { it.substringBefore(':') },
+            writers.map { it.substringBefore(':') }.distinct(),
         )
+    }
+
+    @Test
+    fun `both writers in that file record a version with the flavour`() {
+        // Recording the flavour without the release is the bug the version field was added for: the manager
+        // rows then fall back to a number compiled into the app and offer a manager the daemon was never
+        // built against. Both paths - a device entry and a generic daemon - have to carry it.
+        for (declaration in listOf(
+            "internal fun rememberResolvedPayload",
+            "internal fun rememberResolvedKernelSu",
+        )) {
+            val body = functionBody("ManagerOffer.kt", declaration)
+            assertTrue(
+                "$declaration writes the flavour without recording the release that goes with it:\n$body",
+                body.contains("AppPreferences.setPayloadKernelSuVersion("),
+            )
+            assertTrue(
+                "$declaration does not set the flavour from what it resolved, so the manager this app " +
+                    "offers can be the one for a kernel this phone is not running:\n$body",
+                body.contains("AppPreferences.setKernelsuFlavor("),
+            )
+        }
     }
 
     @Test

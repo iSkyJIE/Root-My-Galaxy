@@ -1,6 +1,7 @@
 package dev.busung.s25uroot
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -103,6 +104,30 @@ class UniversalRootContractTest {
     private fun code(text: String): String =
         text.replace(Regex("/\\*.*?\\*/", RegexOption.DOT_MATCHES_ALL), " ")
             .replace(Regex("//[^\n]*"), " ")
+
+    @Test
+    fun `the chain reads the daemon from this app's own data directory`() {
+        // The one string in the native code that cannot be derived - and the most expensive kind of drift. The
+        // shellcode runs in another process and has no way to learn which app staged the daemon, so it reads
+        // one fixed path; a package rename without this line leaves a run that finds no daemon, roots nothing,
+        // and reports it as the exploit having failed.
+        val appId = Regex("""applicationId = "([^"]+)"""")
+            .find(source("app/build.gradle.kts"))
+            ?.groupValues
+            ?.get(1)
+            ?: error("no applicationId in the app's build file")
+        val chainPath = Regex("""\.asciz "(/data/data/[^"]+/ksud)"""")
+            .find(source("app/src/main/cpp/dfroot/libc.S"))
+            ?.groupValues
+            ?.get(1)
+            ?: error("libc.S no longer names the daemon path it reads")
+        assertEquals(
+            "the chain reads the daemon from a directory that is not this app's data directory, so the file " +
+                "the app stages before the run would never be found",
+            "/data/data/$appId/ksud",
+            chainPath,
+        )
+    }
 
     private fun source(path: String): String {
         val direct = File(path)

@@ -188,6 +188,18 @@ data class LoadedCatalog(
     val sourceFailures: List<String>,
 )
 
+/**
+ * The generic tier as it loaded, and why any source contributed nothing.
+ *
+ * Mirrors [LoadedCatalog] rather than throwing on the first bad source: one source publishing a stale feed
+ * must not hide another source's good one, and the caller needs the reasons to tell "nobody publishes this"
+ * from "the feed could not be read".
+ */
+data class LoadedGenericDaemons(
+    val daemons: List<GenericDaemon>,
+    val failures: List<String>,
+)
+
 class PayloadRepository(private val context: Context) {
     fun loadCatalog(): LoadedCatalog {
         val sources = AppPreferences.payloadSources(context).enabledSources()
@@ -382,6 +394,82 @@ class PayloadRepository(private val context: Context) {
         Os.chmod(exploit.absolutePath, 0b100100100)
         Os.chmod(kernelSu.absolutePath, 0b100100100)
         return VerifiedPayloads(profile, exploit, kernelSu)
+    }
+
+    /**
+     * Downloads one daemon on its own, verified exactly as an entry's own artifact is.
+     *
+     * The universal root's exploit is the chain compiled into this APK, so that path needs the KernelSU half
+     * of a payload and nothing else. Going through [download] would fetch and verify a device entry's exploit
+     * whose result is thrown away - and, worse, a failure in that download would stop a run that never uses
+     * it. Both tiers of that path come through here for that reason.
+     */
+    fun downloadDaemon(
+        artifact: RemoteArtifact,
+        flavor: KernelSuFlavor,
+        onProgress: (String) -> Unit,
+    ): File {
+        val directory = File(context.filesDir, "payloads/universal-${sanitize(flavor.id)}").apply { mkdirs() }
+        val file = downloadArtifact(
+            artifact,
+            File(directory, "ksud"),
+            context.getString(R.string.artifact_daemon, flavor.label),
+            onProgress,
+        )
+        Os.chmod(file.absolutePath, 0b100100100)
+        return file
+    }
+
+    /**
+     * The KMI-generic daemons the enabled sources publish, with their URLs pinned to the revision they were
+     * read at.
+     *
+     * A source that does not publish the generic tier is not a failure. The two feeds are edited by different
+     * workflows and one can lag the other, so this collects what it finds and keeps the reasons it found
+     * nothing - [LoadedGenericDaemons.failures] is what lets the caller say whether a tier is missing or was
+     * merely unreadable, which are different things to do something about.
+     */
+    fun loadGenericDaemons(): LoadedGenericDaemons {
+        val sources = AppPreferences.payloadSources(context).enabledSources()
+        require(sources.isNotEmpty()) { context.getString(R.string.repo_no_source_enabled) }
+
+        val daemons = mutableListOf<GenericDaemon>()
+        val failures = mutableListOf<String>()
+        for (source in sources) {
+            try {
+                val commit = resolveCommit(source)
+                val bytes = downloadBytes(rawUrl(source, commit, GenericDaemonFeed.PATH), MAX_MANIFEST_BYTES)
+                val feed = GenericDaemonFeed.parse(bytes)
+                for (ignored in feed.ignored) {
+                    AppLog.warn(
+                        AppLogTags.CATALOG,
+                        "Ignoring a generic daemon declaring flavour \"$ignored\": this build knows " +
+                            KernelSuFlavor.ids,
+                    )
+                }
+                daemons += feed.entries.map { entry ->
+                    entry.copy(
+                        sourceId = source.id,
+                        sourceLabel = source.label,
+                        sourceCommit = commit,
+                        daemon = entry.daemon.copy(url = pinArtifactUrl(source, entry.daemon.url, commit)),
+                    )
+                }
+            } catch (error: Throwable) {
+                val detail = context.getString(
+                    R.string.repo_source_failed,
+                    source.label,
+                    error.message ?: error.javaClass.simpleName,
+                )
+                failures += detail
+                AppLog.warn(AppLogTags.CATALOG, detail)
+            }
+        }
+        AppLog.info(
+            AppLogTags.CATALOG,
+            "Generic daemons: ${daemons.size} entries from ${sources.size - failures.size}/${sources.size} sources",
+        )
+        return LoadedGenericDaemons(daemons, failures)
     }
 
     /**
