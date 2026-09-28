@@ -56,4 +56,45 @@ internal object BootState {
     }.getOrDefault(false)
 
     private fun exists(path: String): Boolean = runCatching { File(path).exists() }.getOrDefault(false)
+
+    /** The kernel's own answer to "is SELinux enforcing", which is `1` or `0` and nothing else. */
+    private const val SELINUX_ENFORCE = "/sys/fs/selinux/enforce"
+
+    /**
+     * Whether SELinux is enforcing, or null when this process cannot tell.
+     *
+     * The exploit's kernel module sets SELinux permissive - it has to, that is how the pages get written - and
+     * the difference between a phone that is rooted and a phone that is rooted *and left open* is whether that
+     * was put back. DFReroot-S25U's own hardware note is the case for checking it rather than assuming: one of
+     * its releases "can report success at the stage2 bind marker while SELinux is still globally Permissive".
+     *
+     * Null is a real answer and not a failure: this is read from inside `system_server`, where it is usually
+     * allowed, but a device that denies it must be told apart from one that says "permissive" - the first is
+     * "cannot tell" and the second is "this boot is open". Nothing here acts on the reading; it is a fact for a
+     * verdict to refuse on - see [enforcingCloseout].
+     */
+    fun selinuxEnforcing(): Boolean? = runCatching {
+        when (File(SELINUX_ENFORCE).readText().trim()) {
+            "1" -> true
+            "0" -> false
+            else -> null
+        }
+    }.getOrNull()
+
+    /**
+     * What a reading means for a verdict, or null when the run may be reported as a success.
+     *
+     * Fail-closed, and in the one direction that costs nothing to be wrong about: a run that rooted the phone
+     * but left it permissive is refused, which is a run reported as needing attention when it partly worked. The
+     * other direction - calling a boot rooted while it is open - is the failure this exists to stop, and nobody
+     * reading "Succeeded" would go looking for it.
+     *
+     * `null` - cannot tell - is deliberately **not** a refusal. Refusing on it would turn a device that denies
+     * the read into one whose every run is reported as a failure, and the app has no way to distinguish that
+     * from a broken reading; the log says what was read, which is what a bug report needs.
+     */
+    fun enforcingCloseout(): String? = when (selinuxEnforcing()) {
+        false -> "SELinux is still permissive, so an app could read what this root was meant to hide"
+        else -> null
+    }
 }
