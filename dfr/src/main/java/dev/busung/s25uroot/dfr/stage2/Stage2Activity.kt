@@ -375,7 +375,12 @@ class Stage2Activity : Activity() {
         try {
             if (binder.transact(CODE_RUN_ALL, request, reply, 0)) {
                 result = reply.readInt()
-                append("\nRun all -> $result")
+                // The number is kept and its meaning added, because they are different facts: the code is what
+                // the exploit returned and is what a bug report wants, and the sentence is what tells this run
+                // apart from the three other ways it can end. Upstream's own fix for the same thing: the native
+                // `runAll` was a void function reporting nothing, and its failure marker was inside the success
+                // branch, so a run that failed printed "Done."
+                append("\nRun all -> $result (${describeRunOutcome(result)})")
             } else {
                 append("[x] The controller refused the call")
             }
@@ -386,6 +391,30 @@ class Stage2Activity : Activity() {
             reply.recycle()
         }
         return result
+    }
+
+    /**
+     * What a run's result code means, said in words rather than left as a number.
+     *
+     * The codes are the exploit's own, from `DirtyFrag.runAll` in `libexp`: it returns as soon as it knows
+     * something, and each way it can return is a different thing for the reader to do.
+     *
+     * - `0` the success marker was set, so KernelSU is up - open the manager.
+     * - `1` the **failure** marker was set. This is the code that used to be indistinguishable from success:
+     *   the original checked the failure and success markers in one condition and printed "Done." for either.
+     * - `2` neither marker appeared before the trigger loop ran out. The run neither succeeded nor said it had
+     *   failed, which is the one outcome that needs the log read rather than acted on.
+     * - `3` a patch step refused before anything was triggered - no kernel state was changed, and the reason is
+     *   the line above this one.
+     *
+     * The helper's lines are literals rather than resources, which is why this returns a sentence and not an id.
+     */
+    private fun describeRunOutcome(code: Int): String = when (code) {
+        0 -> "success marker set: KernelSU is up, open the manager"
+        1 -> "the failure marker was set, so this run failed"
+        2 -> "no signal before the loop ran out: read the log"
+        3 -> "refused before the trigger: a patch step failed"
+        else -> "unexpected result code, read the log"
     }
 
     /**
@@ -464,7 +493,11 @@ class Stage2Activity : Activity() {
                 append("[*] Waiting for the controller (${left / 1000}s left)")
                 runCatching { controllerLock.wait(minOf(left, 5_000)) }
                     .onFailure { Thread.currentThread().interrupt() }
-                current = controller
+                // Two deliveries now and this waits on one of them: the broadcast sets the field from its own
+                // thread, and the bound service sets the shared slot. Taking whichever is there is the whole of
+                // how the fallback works, and the re-check below is what lets a slot arrival be seen even
+                // though nothing notified *this* lock.
+                current = controller ?: ControllerService.controllerNow()?.also { controller = it }
             }
             return current
         }

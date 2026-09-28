@@ -47,15 +47,39 @@ internal object DmcGate {
     /** Whether the app last said the fix is on. Off when it has never said anything. */
     internal fun enabled(context: Context): Boolean = store(context).getBoolean(KEY_ENABLED, false)
 
-    /** What the app just said. Called on the launch that carries the setting, and nowhere else. */
+    /**
+     * What the app just said. Called on the launch that carries the setting, and nowhere else.
+     *
+     * **Committed and then flushed, not applied.** `apply()` hands the write to a background flush, and the
+     * very next thing a launch that carries this setting may do is ask for the restart it has to survive.
+     * Losing it is not a lost preference: the reader is the boot receiver, and a value that did not land reads
+     * as the default - which is `false` - so the failure is a fix that looks switched off on a phone where it
+     * was switched on. That is the exact failure this class exists to avoid, and `apply()` is the one write
+     * that can still produce it.
+     */
     internal fun setEnabled(context: Context, enabled: Boolean) {
-        store(context).edit().putBoolean(KEY_ENABLED, enabled).apply()
+        store(context).edit().putBoolean(KEY_ENABLED, enabled).commit()
+        syncNow()
+    }
+
+    /**
+     * Asks the kernel to flush what is pending, best effort.
+     *
+     * Ported from DFReroot's `AutoRoot.syncNow()`, which runs it for the same reason: a value a reboot is about
+     * to depend on should be on the disk before the reboot is asked for, and `commit()` fsyncs the file rather
+     * than everything around it. It never throws - a `sync` that failed is not a reason to report the setting
+     * as unsaved.
+     */
+    internal fun syncNow() {
+        runCatching { Runtime.getRuntime().exec("sync").waitFor() }
     }
 
     /** What the last boot's write did, for the screen - null until there has been one. */
     internal fun lastResult(context: Context): String? = store(context).getString(KEY_LAST_RESULT, null)
 
     internal fun record(context: Context, result: String) {
-        store(context).edit().putString(KEY_LAST_RESULT, result).apply()
+        // Committed for the same reason, though only a screen reads this one back: a value whose whole purpose
+        // is to be read after the next boot should not depend on when a background flush happened to run.
+        store(context).edit().putString(KEY_LAST_RESULT, result).commit()
     }
 }

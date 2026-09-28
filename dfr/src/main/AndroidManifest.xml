@@ -57,6 +57,19 @@
             android:exported="false" />
 
         <!--
+          The other way the controller binder comes back, alongside the broadcast [StageReceiver] sends.
+
+          `exported="true"` because the sender is network_stack - another process with another uid - and
+          `directBootAware="true"` because an unattended run begins at a boot broadcast, which is the one
+          context a broadcast is documented to be dropped from. The receiver above is kept: both deliveries
+          hand over the same binder to the same wait, so a device where either path fails still has the other.
+        -->
+        <service
+            android:name=".ControllerService"
+            android:exported="true"
+            android:directBootAware="true" />
+
+        <!--
           The D2 fix, once per boot.
 
           `directBootAware="true"` is the whole reason this receiver exists rather than the write being
