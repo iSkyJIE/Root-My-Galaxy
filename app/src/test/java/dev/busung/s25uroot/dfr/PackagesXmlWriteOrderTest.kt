@@ -72,6 +72,30 @@ class PackagesXmlWriteOrderTest {
         )
     }
 
+    @Test
+    fun `an empty backup is replaced, and a backup with no bytes is never accepted`() {
+        // The second defect DFReroot found on hardware, in this same function: a run produced a 0-byte
+        // `packages.xml.bak-df-installer` and the code kept it, because it only asked whether the file
+        // existed. A backup that is empty is worse than no backup - it looks like there is something to roll
+        // back to, and rolling back to it is the same as having nothing.
+        val source = source()
+
+        assertTrue(
+            "an empty existing backup is kept again, so a failed backup looks like a usable one",
+            source.contains("if (bak.exists() && bak.length() == 0L)"),
+        )
+        assertTrue(
+            "nothing refuses a backup with no bytes in it, which is the state that reads as a rollback and is not one",
+            source.contains("require(bak.length() > 0L)"),
+        )
+        // And a copy that stopped early is the same failure at a different size, so the one moment it can be
+        // caught is while the original is still the original.
+        assertTrue(
+            "a freshly made backup is not checked against what it was copied from",
+            source.contains("require(bak.length() == original.length())"),
+        )
+    }
+
     /** The `writeBack` function, which is the part of this file that touches the real thing. */
     private fun writeBack(): String {
         val source = source()

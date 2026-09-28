@@ -498,13 +498,33 @@ object PackagesXml {
         } catch (e: Exception) {
             log.appendLine("[!] stat original: $e (using 0600 system:system)")
         }
+        val original = java.io.File(xmlPath)
         val bak = java.io.File(xmlPath + BACKUP_SUFFIX)
+        // A backup with no bytes in it is not a backup, and keeping one is worse than having none: it looks
+        // like there is something to roll back to. This is the second defect DFReroot's own hardware run
+        // found in this function - it produced a 0-byte `packages.xml.bak-df-installer`, and the code kept it
+        // because it only ever asked `exists()`. The empty file is replaced by a real copy rather than
+        // deleted-and-forgotten, because the run still needs something to fall back to.
+        if (bak.exists() && bak.length() == 0L) {
+            log.appendLine("[!] the backup was empty, so it is being replaced rather than kept")
+            bak.delete()
+        }
         if (!bak.exists()) {
-            java.io.File(xmlPath).copyTo(bak, overwrite = false)
+            original.copyTo(bak, overwrite = false)
             log.appendLine("[*] backup -> ${bak.absolutePath}")
+            // Read back what the copy says it wrote. A copy that stopped early leaves a file that exists and
+            // is wrong, which is the empty file above wearing a different size - and the only moment it can
+            // be compared is now, while the original is still the original.
+            require(bak.length() == original.length()) {
+                "the backup is ${bak.length()} bytes and the original is ${original.length()}"
+            }
         } else {
             log.appendLine("[*] backup already exists, keeping ${bak.absolutePath}")
+            // Not compared against the original, deliberately: this branch is a backup kept from an earlier
+            // run, and PMS has rewritten packages.xml many times since - so a different size is the expected
+            // state of a good backup here, not a fault. What it must not be is empty.
         }
+        require(bak.length() > 0L) { "the backup at ${bak.absolutePath} has no bytes in it" }
         // The backup is given the original's metadata too: it is the file somebody has to restore by hand, and
         // a rollback that lands as root:root 0644 is a second failure on top of the one it is undoing.
         applyPerms(bak.absolutePath, wantMode, wantUid, wantGid, log)
