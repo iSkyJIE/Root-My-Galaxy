@@ -100,6 +100,33 @@ class RootStopwatchTest {
         assertTrue("the record's codec does not read it", history.contains("""getLong("rootedInMillis")"""))
     }
 
+    @Test
+    fun `the history list shows the duration beside the verdict`() {
+        val main = source("MainActivity.kt")
+        val row = main.substringAfter("private fun HistoryEntryCard(").substringBefore("private fun HistoryDetail(")
+
+        assertTrue(
+            "the list row does not show how long a run took, so two runs can only be compared by opening them " +
+                "one at a time",
+            row.contains("R.string.history_rooted_in"),
+        )
+        assertTrue(
+            "the row draws a duration unconditionally, which would put a number on a run that rooted nothing",
+            row.contains("entry.rootedInMillis?.let"),
+        )
+        assertTrue(
+            "the verdict is not the thing that yields when the row is tight, so a long duration would cut off " +
+                "the verdict instead",
+            row.contains("modifier = Modifier.weight(1f)"),
+        )
+        // And the detail card keeps its own line, where there is room to name what the number means.
+        val detail = main.substringAfter("private fun HistoryResultCard(")
+        assertTrue(
+            "the run's detail card lost the measurement this is meant to mirror",
+            detail.contains("R.string.history_rooted_in"),
+        )
+    }
+
     private fun source(name: String): String {
         val file = candidateRoots()
             .flatMap { root -> root.walkTopDown().filter { it.isFile && it.name == name }.toList() }

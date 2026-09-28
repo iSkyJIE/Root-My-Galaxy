@@ -3562,7 +3562,30 @@ private fun HistoryEntryCard(
                 }
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(historyResultLabel(entry.result), style = MaterialTheme.typography.titleMedium)
+                // The verdict and how long it took on one line, so the durations form a column that can be read
+                // down the list. Under the verdict they would be a fourth line on every successful row, and
+                // comparing two runs - the only reason to know any of this - would mean opening them one at a
+                // time.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = historyResultLabel(entry.result),
+                        style = MaterialTheme.typography.titleMedium,
+                        // Weighted, so the duration beside it keeps its own width and the verdict wraps instead.
+                        // A verdict that runs short is read fine; a duration with its end cut off is not.
+                        modifier = Modifier.weight(1f),
+                    )
+                    // Absent for a run that rooted nothing, which leaves those rows exactly as they were.
+                    entry.rootedInMillis?.let { rooted ->
+                        Text(
+                            text = stringResource(R.string.history_rooted_in, formatRootDuration(rooted)),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = contentColor.copy(alpha = 0.78f),
+                        )
+                    }
+                }
                 Text(
                     formatHistoryTime(entry.startedAtMillis),
                     style = MaterialTheme.typography.bodyMedium,
