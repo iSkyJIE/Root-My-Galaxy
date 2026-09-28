@@ -478,6 +478,26 @@ object PackagesXml {
      * are removed by the app's own clean-up action ([DfrInstall.cleanupFilesCommand]).
      */
     private fun writeBack(xmlPath: String, patched: ByteArray, log: StringBuilder) {
+        // The original's mode and owner, read **before** anything is written.
+        //
+        // This is upstream's own fix (`Apply permissions from original file permissions`), and the failure it
+        // closed is worth keeping written down here because this code had it: these values were stat'd off the
+        // *backup*, which is created first and is a fresh file - in a root process that is root:root 0644 - so
+        // the phone's real `system:system 0660 u:object_r:system_data_file:s0` came out `root:root 0644`, and
+        // the next boot is PMS reading a packages.xml it cannot use. The only trustworthy source of this
+        // file's metadata is the file itself, read before it is touched.
+        var wantMode = 384 // 0600
+        var wantUid = 1000
+        var wantGid = 1000
+        try {
+            val st = android.system.Os.stat(xmlPath)
+            wantMode = st.st_mode and 0x1FF
+            wantUid = st.st_uid
+            wantGid = st.st_gid
+            log.appendLine("[*] original perms ${Integer.toOctalString(wantMode)} $wantUid:$wantGid")
+        } catch (e: Exception) {
+            log.appendLine("[!] stat original: $e (using 0600 system:system)")
+        }
         val bak = java.io.File(xmlPath + BACKUP_SUFFIX)
         if (!bak.exists()) {
             java.io.File(xmlPath).copyTo(bak, overwrite = false)
@@ -485,18 +505,9 @@ object PackagesXml {
         } else {
             log.appendLine("[*] backup already exists, keeping ${bak.absolutePath}")
         }
-        // Original mode/owner for the final file (typically 0600 system:system).
-        var wantMode = 384 // 0600
-        var wantUid = 1000
-        var wantGid = 1000
-        try {
-            val st = android.system.Os.stat(xmlPath + BACKUP_SUFFIX)
-            wantMode = st.st_mode and 0x1FF
-            wantUid = st.st_uid
-            wantGid = st.st_gid
-        } catch (e: Exception) {
-            log.appendLine("[!] stat backup: $e (using 0600 system:system)")
-        }
+        // The backup is given the original's metadata too: it is the file somebody has to restore by hand, and
+        // a rollback that lands as root:root 0644 is a second failure on top of the one it is undoing.
+        applyPerms(bak.absolutePath, wantMode, wantUid, wantGid, log)
         // Write strategy: direct overwrite first (works where the inode
         // allows it), then rename swap. NOTE: no setenforce games — EPERM was
         // observed even with SELinux fully Permissive, so this is not a MAC
@@ -534,6 +545,31 @@ object PackagesXml {
             applyPerms(xmlPath, wantMode, wantUid, wantGid, log)
             execOk("restorecon", xmlPath)
             log.appendLine("[+] wrote ${patched.size} bytes (TEXT xml; PMS re-reads either format)")
+            // Read back what was actually applied, and refuse rather than report a write that left this file
+            // owned by someone else. Asking for a chmod/chown is not the same fact as the values on disk, and
+            // on this file the difference is a boot loop - so, like upstream, this throws rather than logging.
+            verifyPerms(xmlPath, wantMode, wantUid, wantGid, log)
+        }
+    }
+
+    /**
+     * Reads the metadata back off [path] and refuses a mismatch.
+     *
+     * Ported with the ordering fix above, from the same upstream commit: upstream added both at once, because
+     * getting the source of the values right is only half of it - the other half is that the values landed.
+     */
+    private fun verifyPerms(path: String, mode: Int, uid: Int, gid: Int, log: StringBuilder) {
+        val st = try {
+            android.system.Os.stat(path)
+        } catch (e: Exception) {
+            throw RuntimeException("stat $path failed: $e")
+        }
+        val got = st.st_mode and 0x1FF
+        log.appendLine("[verify] perms ${Integer.toOctalString(got)} ${st.st_uid}:${st.st_gid}")
+        if (got != mode || st.st_uid != uid || st.st_gid != gid) {
+            throw RuntimeException(
+                "perm mismatch on $path: want ${Integer.toOctalString(mode)} $uid:$gid",
+            )
         }
     }
 
