@@ -140,6 +140,39 @@ class RunActionBarTest {
         assertTrue("nothing separates the bar from the page any more", body.contains("Brush.verticalGradient"))
     }
 
+    @Test
+    fun `every control in the bar is weighted, so no answer is drawn label-sized`() {
+        // The row fills the width it is given - [DialogActions] says why - and a control without a weight
+        // wraps its own label instead, which draws a footnote-sized pill beside a full-width one. The
+        // failure is invisible in a diff and only visible on a screen, which is how both of these survived:
+        // Done was drawn at its label's width beside a full-width Soft Reboot, and the retry countdown's two
+        // answers were drawn beside a third of the bar while the sentence took the rest.
+        //
+        // Checked control by control rather than by counting, so a new row may add controls freely and the
+        // one thing that fails is a control that is not weighted. A control that happens to be alone still
+        // carries one, which is what the bar already does everywhere - so the rule needs no exceptions.
+        val bar = source("InstallActivity.kt")
+            .substringAfter("bar = {")
+            .substringBefore("\n        ) {")
+        assertTrue(
+            "the slice is not the run's bar, so this is holding something else to the rule:\n$bar",
+            bar.contains("RunActionBar"),
+        )
+
+        val controls = Regex("""(?:AppActionButton|RecoveryActionButton)\(|Text\(""").findAll(bar).toList()
+        assertTrue("the bar draws no controls this scan can see", controls.size > 1)
+        controls.forEachIndexed { index, control ->
+            val start = control.range.first
+            val end = controls.getOrNull(index + 1)?.range?.first ?: bar.length
+            val segment = bar.substring(start, end)
+            assertTrue(
+                "a control in the bar has no weight, so it is drawn at its label's width rather than " +
+                    "filling the row it shares: ${segment.trim().lineSequence().first()}",
+                segment.contains("weight(1f)"),
+            )
+        }
+    }
+
     private fun source(name: String): String {
         val file = candidateRoots()
             .flatMap { root -> root.walkTopDown().filter { it.isFile && it.name == name }.toList() }

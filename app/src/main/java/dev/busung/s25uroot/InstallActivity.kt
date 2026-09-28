@@ -494,6 +494,13 @@ private fun InstallScreen(
                             when {
                                 // The countdown and its two answers in the bar itself, because that is where
                                 // the answers are: as a card it was a second surface inside this one.
+                                //
+                                // All three carry the same weight, which is the rule every other row in this
+                                // bar already followed - and the only row that did not. The two answers used to
+                                // wrap their own labels while the sentence beside them took what was left, so
+                                // the row read as one message with two footnotes instead of three things each
+                                // given a third of it. A label wraps to two lines rather than eliding, so the
+                                // ones that are tight here - "Stop waiting" is the longest - stay readable.
                                 waiting != null -> {
                                     Text(
                                         text = stringResource(R.string.retry_waiting_body, waiting),
@@ -506,6 +513,7 @@ private fun InstallScreen(
                                             clickHaptic(view)
                                             waitRemaining = null
                                         },
+                                        Modifier.weight(1f),
                                     )
                                     AppActionButton(
                                         AppAction(
@@ -516,6 +524,7 @@ private fun InstallScreen(
                                             waitRemaining = null
                                             onRetry()
                                         },
+                                        Modifier.weight(1f),
                                     )
                                 }
                                 installState.phase == InstallPhase.Failed ||
@@ -550,17 +559,31 @@ private fun InstallScreen(
                                             // The label, not the sentence: the answer button resolves its
                                             // own label, so every answer in the app is one resource.
                                             label = R.string.install_load_modules,
+                                            // The loud one, which no other use of this button is: the row has
+                                            // two answers and this is the one that finishes what the run
+                                            // started. The restart is what puts the freshly mounted modules
+                                            // into a Zygote, while the answer beside it only leaves the screen -
+                                            // so leaving both quiet made the row two equally optional things
+                                            // and the step that completes the job indistinguishable from the
+                                            // way out.
+                                            role = AppActionRole.Priority,
                                             modifier = Modifier.weight(1f),
                                             onOpenSetting = onOpenSetting,
                                         )
                                     }
-                                    // Quiet rather than filled: the restart above is the step that finishes a
-                                    // load, and this is only the way out of the screen.
+                                    // Quiet rather than filled: the restart beside it is the step that finishes
+                                    // a load, and this is only the way out of the screen.
                                     AppActionButton(
                                         AppAction(R.string.action_done) {
                                             clickHaptic(view)
                                             onClose()
                                         },
+                                        // Weighted like its neighbour, so the two share the bar evenly.
+                                        // Unweighted it wrapped its own four-letter label, which drew a
+                                        // footnote-sized pill beside a full-width restart and read as though one
+                                        // of the two answers mattered less than the other - the opposite of
+                                        // what the fills now say.
+                                        Modifier.weight(1f),
                                     )
                                 }
                             }

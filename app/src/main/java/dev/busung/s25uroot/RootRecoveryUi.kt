@@ -205,6 +205,14 @@ internal fun RecoveryActionButton(
      * changes but the type: its sentence is still its own.
      */
     @StringRes label: Int,
+    /**
+     * How loud this answer is, which is the caller's to say because it depends on the row.
+     *
+     * Required rather than defaulted: a row of two loud answers has no loud one, and whether this tool is
+     * that row's loud answer is a fact about what else is beside it. On the run screen it is; among a set of
+     * tools it would not be.
+     */
+    role: AppActionRole,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     onBootRootModeChanged: (Boolean) -> Unit = {},
@@ -226,12 +234,14 @@ internal fun RecoveryActionButton(
     // The app's own answer button, because this press has a slow half: the action it confirms replaces the
     // running framework, so the wait is not brief, and the button that started it is where "is it working"
     // belongs. It used to answer that by hand, swapping its own icon for a spinner - which is
-    // [AppAction.progress], drawn beside the label rather than in place of the tool's icon. Its fill is
-    // [AppActionRole.Standard] and not the loud one, which is what it was: the row it sits in offers a
-    // quiet way out beside it, and the tonal button it replaces was never the row's primary answer.
+    // [AppAction.progress], drawn beside the label rather than in place of the tool's icon. Its fill is the
+    // caller's [role], because only the caller can see the row: where this is one of several tools that row
+    // already has a recommended answer, and where it is the step that finishes a run's job it is that answer.
+    // The two are one parameter apart, which is why they are not drawn differently.
     AppActionButton(
         AppAction(
             label = label,
+            role = role,
             enabled = enabled && !running,
             progress = running,
         ) {
