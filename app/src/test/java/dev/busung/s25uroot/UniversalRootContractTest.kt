@@ -129,6 +129,25 @@ class UniversalRootContractTest {
         )
     }
 
+    @Test
+    fun `the CVE the payload sheet lists is the one the chain's own bridge names`() {
+        // The number is now stated in two files and derived in neither: the sheet prints it in the header
+        // over the universal rows, and the helper's DirtyFrag bridge names it as the bug its JNI natives
+        // belong to. A CVE is exactly the kind of fact that gets copied and then edited in one place, so it is
+        // taken from the helper's own sentence and looked for in the app's constant - the direction that
+        // catches an edit rather than agreeing with itself.
+        val helper = source("dfr/src/main/java/org/lsposed/lspromise/DirtyFrag.java")
+        val stated = Regex("""CVE-\d{4}-\d{4,}""").find(helper)?.value
+            ?: error("the helper's DirtyFrag bridge no longer names the CVE it belongs to")
+        assertEquals(
+            "the payload sheet lists a CVE the chain's own bridge does not name, so one of the two was " +
+                "edited without the other - and the sheet would be labelling six rows with a number that is " +
+                "not this chain's",
+            stated,
+            UniversalRootRun.CVE,
+        )
+    }
+
     private fun source(path: String): String {
         val direct = File(path)
         val fromRoot = File("../$path")

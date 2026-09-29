@@ -228,26 +228,6 @@
     <string name="autoroot_skip_install">Skip install</string>
     <string name="dfr_reroot_at_boot">Root on Boot (Helper)</string>
     <string name="dfr_reroot_at_boot_detail">Root again after a reboot, without opening the app. Needs Shizuku running.</string>
-    <string name="universal_root_title">Universal root</string>
-    <string name="universal_root_summary">Root without the helper: no temporary root, no Shizuku and nothing installed first. You pick the KernelSU. Tap to start.</string>
-    <string name="universal_root_pick">Which KernelSU?</string>
-    <string name="universal_root_pick_body">The run installs the one you choose: its manager, its daemon and its kernel module. Your KernelSU setting follows the choice, because that is what the regular flow reads. Only one of the three can be in the kernel at a time, so a phone already carrying another needs a reboot before it can take this one.</string>
-    <string name="flavor_kernelsu_name">KernelSU</string>
-    <string name="flavor_kernelsu_next_name">KernelSU-Next</string>
-    <string name="flavor_resukisu_name">ReSukiSU</string>
-    <string name="universal_root_confirm_title">Start the universal root with %1$s?</string>
-    <string name="universal_root_confirm_body">This runs the exploit from this app alone and loads %1$s. Nothing has to be installed first and no previous root is used \u2014 it installs the manager, then patches the vendor libraries the kernel writes through, loads its module and starts the daemon, all four steps on the next screen.</string>
-    <string name="universal_root_confirm_steps">The run then:\n1. check the device and this boot\n2. resolve the payload and install that flavour\'s manager\n3. stage its daemon and run the exploit\n4. load it and check the phone is rooted\n\nIt arms a marker only a reboot clears, so a second run needs a reboot first.</string>
-    <string name="universal_tier_title">Which payload?</string>
-    <string name="universal_tier_intro">Both load the same KernelSU and install the same manager. They differ in the kernel module they carry, which is what decides whether this phone\'s kernel accepts it.</string>
-    <string name="universal_tier_device">Device-specific</string>
-    <string name="universal_tier_generic">Generic</string>
-    <string name="universal_tier_device_line">Device-specific \u2014 %1$s</string>
-    <string name="universal_tier_generic_line">Generic \u2014 %1$s</string>
-    <string name="universal_tier_probing">Checking what the enabled sources publish\u2026</string>
-    <string name="universal_tier_device_missing">no payload in the enabled sources is built for this phone</string>
-    <string name="universal_tier_generic_missing">no generic daemon in the enabled sources carries a module for this phone\'s kernel</string>
-    <string name="universal_confirm_payload">Payload: %1$s</string>
     <string name="universal_step_check">Support check</string>
     <string name="universal_step_payload">Check the payload</string>
     <string name="universal_no_payload">No payload could be resolved for this phone, so nothing was attempted.</string>
@@ -1169,7 +1149,20 @@ Hold Power and Volume Down together for 7 seconds to Reboot it from there.</stri
     <string name="log_shizuku_permission">[+] Shizuku permission granted</string>
     <string name="repo_profile_missing">Support profile %1$s is no longer available</string>
     <string name="select_device_title">Choose a payload</string>
-    <string name="select_device_description">Choose a payload by device model and kernel version.</string>
+    <string name="select_device_description">Choose a payload by device model and kernel version \u2014 or the chain that needs nothing installed first.</string>
+    <!--
+      The sheet's two groups. The second one is named by the exploit and its CVE rather than "universal root",
+      which claimed something about the phone: this chain still needs a payload, it just needs no helper, no
+      temporary root and no Shizuku. Both names come from the app's own statement of the technique, and a test
+      holds the CVE here to the helper's DirtyFrag bridge.
+    -->
+    <string name="payload_group_universal">%1$s (%2$s)</string>
+    <string name="payload_group_universal_detail">Runs from this app alone, before anything is installed: it installs the manager itself, patches the kernel it writes through and starts its daemon. It still needs a payload, and the row says which.</string>
+    <string name="payload_group_device">Device payloads</string>
+    <string name="universal_choice_device">Device payload \u2014 the module built for this phone\'s kernel</string>
+    <string name="universal_choice_generic">Generic payload \u2014 one daemon covering a whole kernel family</string>
+    <string name="universal_choice_stages">stages %1$s</string>
+    <string name="universal_choice_no_entry">no %1$s entry for this phone in the enabled sources</string>
     <string name="kernel_match_exact">Exact kernel match</string>
     <string name="kernel_match_version">Kernel version match only (%1$s)</string>
     <string name="kernel_match_none">Kernel release not listed</string>
@@ -1201,6 +1194,10 @@ Hold Power and Volume Down together for 7 seconds to Reboot it from there.</stri
     <string name="target_show_everything">Search all devices</string>
     <string name="show_my_device_only">Show only my device</string>
     <string name="no_matching_devices">No payload supports this model and kernel version.</string>
+    <!-- Only the device group is empty. The exploit rows above are the answer to it, so this says what is
+         missing rather than that nothing matches - which is what the other three strings above say, and they
+         are only used when the whole sheet came up empty. -->
+    <string name="payload_no_device_rows">No device payload matches this phone and these filters.</string>
     <string name="no_matching_devices_flavor">No payload in the enabled sources loads %1$s.</string>
     <string name="target_flavor_any">All</string>
     <string name="device_mismatch_title">Device doesn\'t match</string>

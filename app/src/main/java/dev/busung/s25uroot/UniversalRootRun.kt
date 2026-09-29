@@ -63,6 +63,22 @@ internal object UniversalRootRun {
      * both of those things the app does itself, so the upstream build is what this drives, and `libc.S`
      * passes the four arguments it accepts and nothing more.
      */
+    /**
+     * The bug this chain uses, and what the project calls the technique.
+     *
+     * Named here once because two things outside this file read them: the payload sheet, which lists a row per
+     * KernelSU per tier and has to say which chain that row is, and a test. The number is not this app's
+     * finding — both root paths here reach the kernel the same way, an unprivileged `IpSecManager` transform
+     * whose ESP packets the kernel decrypts into the page cache of a file the exploit holds open, and the
+     * helper's own DirtyFrag bridge states the CVE the technique is filed under. That statement is where this
+     * comes from, and `UniversalRootContractTest` holds the two together: a CVE is a fact copied between files,
+     * and a copy that drifts is a worse label than none at all.
+     */
+    internal const val CVE = "CVE-2026-43284"
+
+    /** The same technique's name, for a row that has to say what it is without claiming a phone it does not own. */
+    internal const val EXPLOIT_NAME = "DirtyFrag"
+
     private const val DAEMON = "ksud"
 
     /** The exploit's own mutex, which is how a hook that is already in this boot is read. */

@@ -552,6 +552,7 @@ class MainActivity : ComponentActivity() {
                         shizukuBootMode = enabled
                     },
                     openInstaller = ::openInstaller,
+                    openUniversalRun = ::openUniversalRun,
                     settingsTarget = settingsTarget,
                     onSettingsTargetHandled = { settingsTarget = null },
                     openedRunEntry = openedRunId,
@@ -652,6 +653,23 @@ class MainActivity : ComponentActivity() {
             installer.putExtra(InstallActivity.EXTRA_PROFILE_ID, selectionId)
         }
         startActivity(installer)
+    }
+
+    /**
+     * Starts the universal root, which is a run of the install screen rather than a screen of its own.
+     *
+     * The whole of the request is the two answers the picked row carried - which KernelSU and which payload
+     * tier - and the install request id is deliberately not among them: that token exists so a *payload* run
+     * cannot be started twice by the same intent, and this flow has nothing to resolve before it starts, so it
+     * is told to run from the extras alone and refuses on its own terms if this boot cannot take it.
+     */
+    private fun openUniversalRun(flavor: KernelSuFlavor, tier: PayloadTier) {
+        startActivity(
+            Intent(this, InstallActivity::class.java)
+                .putExtra(InstallActivity.EXTRA_UNIVERSAL, true)
+                .putExtra(InstallActivity.EXTRA_UNIVERSAL_FLAVOR, flavor.id)
+                .putExtra(InstallActivity.EXTRA_UNIVERSAL_TIER, tier.name),
+        )
     }
 
     /** The retry this device has armed, read together with the boot it would run in. */
@@ -806,6 +824,15 @@ private fun RootApp(
     requestNotificationPermission: () -> Unit,
     onRequestBatteryExemption: () -> Unit,
     openInstaller: (String?) -> Unit,
+    /**
+     * Starts the universal root with one row's two answers.
+     *
+     * Beside [openInstaller] rather than folded into it because the two requests are not the same request: a
+     * payload run is named by a profile this process resolved, and this one is named by a flavour and a tier
+     * that no profile describes. It is a callback for the same reason that one is - the sheet is drawn by a
+     * function that has no activity to start one from.
+     */
+    openUniversalRun: (KernelSuFlavor, PayloadTier) -> Unit,
     /** A settings card another screen asked this one to open on, or null. */
     settingsTarget: String?,
     onSettingsTargetHandled: () -> Unit,
@@ -1125,22 +1152,40 @@ private fun RootApp(
             catalog = targetCatalog,
             onDismiss = { showTargetPicker = false },
             onRetry = installViewModel::loadTargetCatalog,
-            onNext = { profile ->
-                selectedProfile = profile
-                // A payload picked by hand is a decision about which KernelSU this phone will load, so
-                // the flavour follows it from here - before the run that proves it works, because the
-                // manager is installed to drive the load that run performs. The state is updated with
-                // the preference: the rows that read it are on other screens and are drawn from this
-                // one's value.
-                rememberResolvedPayload(context, profile)
-                onPayloadFlavorResolved(profile.flavor)
+            // Two kinds of row, two ways on from here, and the difference is real rather than a
+            // screen's preference: one runs the payload flow through the helper, and the other runs
+            // the chain that needs no helper, no temporary root and no Shizuku at all.
+            onNext = { choice ->
                 showTargetPicker = false
-                compatibilityWarning = when {
-                    !profile.matchesDevice(device) -> CompatibilityWarning.Device
-                    !profile.matchesKernelVersion(device) -> CompatibilityWarning.KernelVersion
-                    else -> null
+                when (choice) {
+                    is PayloadChoice.Device -> {
+                        val profile = choice.profile
+                        selectedProfile = profile
+                        // A payload picked by hand is a decision about which KernelSU this phone will
+                        // load, so the flavour follows it from here - before the run that proves it
+                        // works, because the manager is installed to drive the load that run performs.
+                        // The state is updated with the preference: the rows that read it are on other
+                        // screens and are drawn from this one's value.
+                        rememberResolvedPayload(context, profile)
+                        onPayloadFlavorResolved(profile.flavor)
+                        compatibilityWarning = when {
+                            !profile.matchesDevice(device) -> CompatibilityWarning.Device
+                            !profile.matchesKernelVersion(device) -> CompatibilityWarning.KernelVersion
+                            else -> null
+                        }
+                        if (compatibilityWarning == null) showInstallConfirmation = true
+                    }
+                    is PayloadChoice.Universal -> {
+                        // Nothing is written here, and that is the one thing this branch does have to
+                        // get right: which KernelSU this run loads is decided by the payload it
+                        // *resolves*, so the run writes the flavour itself, once, after resolving -
+                        // the single writer this project allows. A flavour written from a row would be
+                        // a second writer, and it would be writing the one that was *asked* for.
+                        selectedProfile = null
+                        compatibilityWarning = null
+                        openUniversalRun(choice.flavor, choice.tier)
+                    }
                 }
-                if (compatibilityWarning == null) showInstallConfirmation = true
             },
         )
     }
@@ -1788,9 +1833,6 @@ private fun OverviewPage(
             }
         }
         item { InstallStatusCard(installState, onInstall) }
-        // Under the install card and deliberately its own thing rather than a mode of it: that card's run
-        // needs the system-uid helper, and this one needs nothing installed at all. See [UniversalRootCard].
-        item { UniversalRootCard() }
         // Above the readiness card, because it is about something that already happened rather than
         // something to check, and it is the only account of a restart the user asked for: the dialog
         // that started it could only say the request was made.
@@ -6791,7 +6833,7 @@ private fun TargetSelectionSheet(
     catalog: TargetCatalogUiState,
     onDismiss: () -> Unit,
     onRetry: () -> Unit,
-    onNext: (TargetProfile) -> Unit,
+    onNext: (PayloadChoice) -> Unit,
 ) {
     val context = LocalContext.current
     // Read once and written on every change: the answer is a standing preference, not a question for
@@ -6804,10 +6846,13 @@ private fun TargetSelectionSheet(
     // KernelSU this app will use is decided by the payload that gets picked, below - see
     // [rememberResolvedPayload].
     var flavorFilter by remember { mutableStateOf<KernelSuFlavor?>(null) }
-    var selectedSelectionId by remember { mutableStateOf<String?>(null) }
+    // The picked row, by [PayloadChoice.key]. One selection for both groups, because the sheet is one list to
+    // the person reading it: a payload a source published and the chain that needs no payload are two ways to
+    // root this phone, and the Next below starts whichever one is picked.
+    var selectedKey by remember { mutableStateOf<String?>(null) }
     val view = LocalView.current
-    val visibleProfiles = remember(catalog.profiles, showOnlyMyDevice, device, query, flavorFilter) {
-        visibleTargets(
+    val rows = remember(catalog.profiles, showOnlyMyDevice, device, query, flavorFilter) {
+        payloadRows(
             profiles = catalog.profiles,
             device = device,
             fitsDeviceOnly = showOnlyMyDevice,
@@ -6815,14 +6860,25 @@ private fun TargetSelectionSheet(
             flavor = flavorFilter,
         )
     }
-    val selectedProfile = catalog.profiles.firstOrNull { it.selectionId == selectedSelectionId }
+    // What a device-tier row would stage, resolved from the catalog this sheet already holds by the same call
+    // the run makes ([resolveFor]) - so the row cannot name a payload the run would not use. Resolving fetches
+    // nothing; the run's resolution is the one that downloads, and it is the one that refuses.
+    val catalogEntries = remember(catalog.profiles, device) {
+        KernelSuFlavor.entries.associateWith { catalog.profiles.resolveFor(device, it) }
+    }
+    // Whether that resolution is an answer at all. An empty profile list means "no entry for this phone" only
+    // when the sources were read: a sheet opened while they are still being read, or after a read that failed,
+    // has the same empty list, and calling that a fact about the phone is the kind of wrong answer this app
+    // spends its comments refusing.
+    val catalogRead = !catalog.loading && catalog.error == null
+    val selected = rows.all.firstOrNull { it.key == selectedKey }
 
     // Preselect what the catalog prefers, so a device whose feed lists an exact kernel release
     // starts on that profile instead of an arbitrary three-part sibling. Only fills an empty
     // selection: a profile the user picked is never replaced by a catalog reload.
     LaunchedEffect(catalog.profiles) {
-        if (selectedSelectionId == null) {
-            selectedSelectionId = catalog.profiles.resolveFor(device)?.selectionId
+        if (selectedKey == null) {
+            selectedKey = catalog.profiles.resolveFor(device)?.selectionId
         }
     }
 
@@ -6860,8 +6916,12 @@ private fun TargetSelectionSheet(
                             clickHaptic(view)
                             showOnlyMyDevice = enabled
                             AppPreferences.setTargetFitsDeviceOnly(context, enabled)
-                            if (enabled && selectedProfile?.matches(device) == false) {
-                                selectedSelectionId = null
+                            // Only a device row can be filtered away by this toggle, so only a device row is
+                            // dropped from the selection: the universal rows are shown either way, and
+                            // clearing the pick when it stays on the screen would be an answer to a
+                            // question nobody asked.
+                            if (enabled && (selected as? PayloadChoice.Device)?.profile?.matches(device) == false) {
+                                selectedKey = null
                             }
                         },
                     )
@@ -6948,170 +7008,152 @@ private fun TargetSelectionSheet(
                 }
             }
 
-            when {
-                catalog.loading -> Box(
-                    modifier = Modifier.fillMaxWidth().height(220.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    LoadingIndicator(color = MaterialTheme.colorScheme.onSurface)
-                }
-                catalog.error != null -> Column(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(catalog.error, color = MaterialTheme.colorScheme.error)
-                    // The sheet failed to read the catalog and this is the whole of what it offers.
-                    AppActionButton(
-                        AppAction(
-                            label = R.string.action_retry,
-                            role = AppActionRole.Priority,
-                        ) { onRetry() },
-                    )
-                }
-                // Which of the two controls emptied the list, said rather than left to be worked out -
-                // and with the way out of it under the sentence, since a search that matches nothing
-                // is one tap from a list that does.
-                visibleProfiles.isEmpty() -> Column(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    // The most specific cause, named: a flavour with no payload for this phone is a
-                    // different answer from a search that matches nothing, and the two want different
-                    // next steps from the person reading.
-                    Text(
-                        text = when {
-                            query.isNotBlank() ->
-                                stringResource(R.string.no_matching_devices_query, query.trim())
-                            flavorFilter != null ->
-                                stringResource(R.string.no_matching_devices_flavor, flavorFilter!!.label)
-                            else -> stringResource(R.string.no_matching_devices)
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    AppActionButton(
-                        AppAction(
-                            label = R.string.target_show_everything,
-                            role = AppActionRole.Priority,
+            LazyColumn(
+                // The remaining height, not a fixed 480 dp: the controls above this list and the
+                // actions below it can want more than the sheet has, and when they do it is the
+                // list that has to give - it is the one part of the sheet that scrolls, and the
+                // row that must stay reachable is the one at the bottom. `fill = false` keeps a
+                // short list short, so a tab with two entries still opens to a sheet that ends
+                // where its content does rather than to one full of empty space.
+                //
+                // One list for both groups rather than one list per group: they are one list to the
+                // person reading them, and two scrollables in a sheet are two places to look for a
+                // row. The payloads come first and the universal rows after them, which is the order
+                // they were in when this was two screens - the ordinary run at the top and the one
+                // that needs nothing installed below it - and it is also the order a long catalog
+                // wants: six universal rows above the list would push every payload a person came
+                // for off the fold, while below them they are one short scroll away.
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .selectableGroup(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                when {
+                    catalog.loading -> item(key = SHEET_STATE_KEY) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(220.dp),
+                            contentAlignment = Alignment.Center,
                         ) {
-                            clickHaptic(view)
-                            query = ""
-                            flavorFilter = null
-                            showOnlyMyDevice = false
-                            AppPreferences.setTargetFitsDeviceOnly(context, false)
-                        },
-                    )
-                }
-                else -> LazyColumn(
-                    // The remaining height, not a fixed 480 dp: the controls above this list and the
-                    // actions below it can want more than the sheet has, and when they do it is the
-                    // list that has to give - it is the one part of the sheet that scrolls, and the
-                    // row that must stay reachable is the one at the bottom. `fill = false` keeps a
-                    // short list short, so a tab with two entries still opens to a sheet that ends
-                    // where its content does rather than to one full of empty space.
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f, fill = false)
-                        .selectableGroup(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(visibleProfiles, key = { it.selectionId }) { profile ->
-                        val selected = selectedSelectionId == profile.selectionId
-                        val matchingModel = profile.models.firstOrNull {
-                            it.equals(device.model, ignoreCase = true)
+                            LoadingIndicator(color = MaterialTheme.colorScheme.onSurface)
                         }
-                        val modelLabel = matchingModel ?: profile.models.take(3).joinToString().let {
-                            if (profile.models.size > 3) "$it +${profile.models.size - 3}" else it
-                        }
-                        // Regional siblings share a model and a three-part kernel version, so the
-                        // only thing telling them apart in this list is whether the feed ties the
-                        // profile to this build's full release.
-                        val kernelMatch = profile.kernelMatch(device)
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.large,
-                            color = if (selected) {
-                                MaterialTheme.colorScheme.primaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surfaceContainerHighest
-                            },
+                    }
+                    catalog.error != null -> item(key = SHEET_STATE_KEY) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .selectable(
-                                        selected = selected,
-                                        role = Role.RadioButton,
-                                        onClick = {
-                                            clickHaptic(view)
-                                            selectedSelectionId = profile.selectionId
-                                        },
-                                    )
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                RadioButton(selected = selected, onClick = null)
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        profile.displayName,
-                                        style = MaterialTheme.typography.titleMedium,
-                                    )
-                                    Text(
-                                        modelLabel,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    Text(
-                                        when (kernelMatch) {
-                                            KernelMatch.Exact ->
-                                                stringResource(R.string.kernel_match_exact)
-                                            KernelMatch.Version -> stringResource(
-                                                R.string.kernel_match_version,
-                                                device.kernelVersion,
-                                            )
-                                            KernelMatch.None ->
-                                                stringResource(R.string.kernel_match_none)
-                                        },
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = when (kernelMatch) {
-                                            KernelMatch.Exact -> MaterialTheme.colorScheme.primary
-                                            KernelMatch.Version -> MaterialTheme.colorScheme.onSurfaceVariant
-                                            KernelMatch.None -> MaterialTheme.colorScheme.error
-                                        },
-                                    )
-                                    // What the run this candidate would start stages - the KernelSU
-                                    // whose manager is the one built against it. It is the fact the
-                                    // manager offer is derived from, so it belongs where the choice is
-                                    // made rather than in Settings after the fact, and a sibling that
-                                    // declares nothing says so instead of leaving the gap unexplained.
-                                    Text(
-                                        text = profile.kernelSuVersion?.let { version ->
-                                            stringResource(
-                                                R.string.target_loads_kernelsu,
-                                                profile.flavor.label,
-                                                version,
-                                            )
-                                        } ?: stringResource(
-                                            R.string.target_loads_kernelsu_unknown,
-                                            profile.flavor.label,
-                                        ),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    if (profile.sourceLabel.isNotEmpty()) {
-                                        Text(
-                                            profile.sourceLabel,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
+                            Text(catalog.error, color = MaterialTheme.colorScheme.error)
+                            // This is the whole of what the read failed to give the sheet, which is why
+                            // the universal rows are drawn above it: that path reads no catalog, so a
+                            // failed read is not a reason to hide the one flow that still works on this
+                            // phone.
+                            AppActionButton(
+                                AppAction(
+                                    label = R.string.action_retry,
+                                    role = AppActionRole.Priority,
+                                ) { onRetry() },
+                            )
+                        }
+                    }
+                    // Which of the controls emptied the device group, said rather than left to be worked
+                    // out - and with the way out of it under the sentence, since a search that matches
+                    // nothing is one tap from a list that does.
+                    rows.device.isEmpty() -> item(key = SHEET_STATE_KEY) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            // The most specific cause, named: a flavour with no payload for this phone is a
+                            // different answer from a search that matches nothing, and the two want
+                            // different next steps from the person reading.
+                            Text(
+                                text = if (rows.isEmpty) {
+                                    when {
+                                        query.isNotBlank() ->
+                                            stringResource(R.string.no_matching_devices_query, query.trim())
+                                        flavorFilter != null -> stringResource(
+                                            R.string.no_matching_devices_flavor,
+                                            flavorFilter!!.label,
                                         )
+                                        else -> stringResource(R.string.no_matching_devices)
                                     }
-                                }
-                            }
+                                } else {
+                                    // Only the device group is empty, which is the ordinary state on a phone
+                                    // no source has an entry for. The rows above are the answer to it, so
+                                    // this says what is missing rather than that nothing matches.
+                                    stringResource(R.string.payload_no_device_rows)
+                                },
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            AppActionButton(
+                                AppAction(
+                                    label = R.string.target_show_everything,
+                                    role = AppActionRole.Priority,
+                                ) {
+                                    clickHaptic(view)
+                                    query = ""
+                                    flavorFilter = null
+                                    showOnlyMyDevice = false
+                                    AppPreferences.setTargetFitsDeviceOnly(context, false)
+                                },
+                            )
                         }
+                    }
+                    else -> {
+                        item(key = SHEET_DEVICE_GROUP_KEY) {
+                            PayloadGroupHeader(title = stringResource(R.string.payload_group_device))
+                        }
+                        items(rows.device, key = { it.key }) { choice ->
+                            DevicePayloadRow(
+                                profile = choice.profile,
+                                selected = selectedKey == choice.key,
+                                device = device,
+                                onSelect = {
+                                    clickHaptic(view)
+                                    selectedKey = choice.key
+                                },
+                            )
+                        }
+                    }
+                }
+
+                // Always listed, whatever the device toggle says and whatever a catalog read did: this
+                // group is not published by a source, so nothing above it has a claim on it. That is
+                // the whole of the "always shown" rule, and it is the reason a phone whose catalog
+                // matched nothing - or failed to load at all - can still be rooted from this sheet.
+                if (rows.universal.isNotEmpty()) {
+                    item(key = SHEET_UNIVERSAL_GROUP_KEY) {
+                        PayloadGroupHeader(
+                            // The exploit and its CVE, not "universal root" - that name claimed something
+                            // about the phone. This chain needs a payload like every other row here; what
+                            // it does not need is a helper, a temporary root or Shizuku, and the row under
+                            // this says which payload it takes.
+                            title = stringResource(
+                                R.string.payload_group_universal,
+                                UniversalRootRun.EXPLOIT_NAME,
+                                UniversalRootRun.CVE,
+                            ),
+                            detail = stringResource(R.string.payload_group_universal_detail),
+                        )
+                    }
+                    items(rows.universal, key = { it.key }) { choice ->
+                        UniversalPayloadRow(
+                            choice = choice,
+                            selected = selectedKey == choice.key,
+                            // What the device tier would stage, resolved from the catalog this sheet holds.
+                            // The row only believes it when the sources were read: an empty profile list
+                            // means "no entry for this phone" after a read, and means nothing at all while
+                            // one is in flight or after one failed.
+                            entry = catalogEntries[choice.flavor],
+                            catalogRead = catalogRead,
+                            onSelect = {
+                                clickHaptic(view)
+                                selectedKey = choice.key
+                            },
+                        )
                     }
                 }
             }
@@ -7126,13 +7168,241 @@ private fun TargetSelectionSheet(
                     AppAction(
                         label = R.string.action_next,
                         role = AppActionRole.Priority,
-                        enabled = selectedProfile != null,
+                        enabled = selected != null,
                     ) {
                         clickHaptic(view)
-                        selectedProfile?.let(onNext)
+                        // Whichever kind is picked, this screen's part is over here: a device payload goes to
+                        // the run-plan confirmation, and a universal row to the run itself, which resolves
+                        // its own payload and refuses before it downloads if it cannot have it.
+                        selected?.let(onNext)
                     },
                 ),
             )
+        }
+    }
+}
+
+/**
+ * Keys for the list's own items — the two group labels and the one state that stands in for the device rows.
+ *
+ * The three states share a key because only one of them is ever composed: they are the branches of one
+ * `when`, and a list can no more hold two of them than it can hold two device groups.
+ */
+private const val SHEET_UNIVERSAL_GROUP_KEY = "sheet:universal-group"
+private const val SHEET_DEVICE_GROUP_KEY = "sheet:device-group"
+private const val SHEET_STATE_KEY = "sheet:state"
+
+/**
+ * A label over one of the list's two groups, with a line of its own when the group needs introducing.
+ *
+ * The sheet's title says "choose a payload", and this list holds two kinds of thing that answer it: what the
+ * sources published for a device, and the chain that needs nothing installed. A reader who cannot see which
+ * rows are which cannot use the choice - the two produce runs that look alike on the next screen - so each
+ * group says what it is before its first row.
+ */
+@Composable
+private fun PayloadGroupHeader(title: String, detail: String? = null) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.titleSmall)
+        detail?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * One device payload: its own name, what it matches on this phone, the KernelSU it stages and where it came
+ * from.
+ *
+ * The markup is the row this sheet has always drawn, moved out of the list and given a name. It moved because
+ * that list now holds two kinds of row and a `when` over the two inside it would have buried a body this size
+ * two levels deeper than the choice it belongs to.
+ */
+@Composable
+private fun DevicePayloadRow(
+    profile: TargetProfile,
+    selected: Boolean,
+    device: DeviceSnapshot,
+    onSelect: () -> Unit,
+) {
+    val matchingModel = profile.models.firstOrNull {
+        it.equals(device.model, ignoreCase = true)
+    }
+    val modelLabel = matchingModel ?: profile.models.take(3).joinToString().let {
+        if (profile.models.size > 3) "$it +${profile.models.size - 3}" else it
+    }
+    // Regional siblings share a model and a three-part kernel version, so the
+    // only thing telling them apart in this list is whether the feed ties the
+    // profile to this build's full release.
+    val kernelMatch = profile.kernelMatch(device)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHighest
+        },
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .selectable(
+                    selected = selected,
+                    role = Role.RadioButton,
+                    onClick = onSelect,
+                )
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            RadioButton(selected = selected, onClick = null)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    profile.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    modelLabel,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    when (kernelMatch) {
+                        KernelMatch.Exact ->
+                            stringResource(R.string.kernel_match_exact)
+                        KernelMatch.Version -> stringResource(
+                            R.string.kernel_match_version,
+                            device.kernelVersion,
+                        )
+                        KernelMatch.None ->
+                            stringResource(R.string.kernel_match_none)
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = when (kernelMatch) {
+                        KernelMatch.Exact -> MaterialTheme.colorScheme.primary
+                        KernelMatch.Version -> MaterialTheme.colorScheme.onSurfaceVariant
+                        KernelMatch.None -> MaterialTheme.colorScheme.error
+                    },
+                )
+                // What the run this candidate would start stages - the KernelSU
+                // whose manager is the one built against it. It is the fact the
+                // manager offer is derived from, so it belongs where the choice is
+                // made rather than in Settings after the fact, and a sibling that
+                // declares nothing says so instead of leaving the gap unexplained.
+                Text(
+                    text = profile.kernelSuVersion?.let { version ->
+                        stringResource(
+                            R.string.target_loads_kernelsu,
+                            profile.flavor.label,
+                            version,
+                        )
+                    } ?: stringResource(
+                        R.string.target_loads_kernelsu_unknown,
+                        profile.flavor.label,
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (profile.sourceLabel.isNotEmpty()) {
+                    Text(
+                        profile.sourceLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One universal row: which KernelSU, which payload, and — for the device tier — what it would stage.
+ *
+ * The group header above already said the rest, so the row leads with the flavour: three rows a person picks
+ * between by which KernelSU they want, and a row that repeated the exploit's name three times would be noise
+ * in the one place the difference between the rows matters.
+ *
+ * [entry] and [catalogRead] are one answer between them, and the pairing is deliberate. The device tier either
+ * resolves to an entry — which is shown, because a row that promised a payload the run would not use would be
+ * worse than one that promised nothing — or to nothing, and "nothing" is only a fact about this phone when
+ * the sources were read. Before that read, or after one that failed, the row says nothing about it at all: the
+ * absent entry is then the app's own missing data, and naming it as the phone's would be the app blaming the
+ * device for a network it never made.
+ */
+@Composable
+private fun UniversalPayloadRow(
+    choice: PayloadChoice.Universal,
+    selected: Boolean,
+    entry: TargetProfile?,
+    catalogRead: Boolean,
+    onSelect: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHighest
+        },
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .selectable(
+                    selected = selected,
+                    role = Role.RadioButton,
+                    onClick = onSelect,
+                )
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            RadioButton(selected = selected, onClick = null)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    choice.flavor.label,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = stringResource(
+                        when (choice.tier) {
+                            PayloadTier.Device -> R.string.universal_choice_device
+                            PayloadTier.Generic -> R.string.universal_choice_generic
+                        },
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (choice.tier == PayloadTier.Device) {
+                    when {
+                        entry != null -> Text(
+                            stringResource(R.string.universal_choice_stages, entry.displayName),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        // The one case that is a refusal said in advance. The run refuses the same way and
+                        // with the resolution's own sentence; this is that sentence's short form, here
+                        // because a row that leads to a failure it could have named is a row that wastes a
+                        // tap and a run's first steps.
+                        catalogRead -> Text(
+                            stringResource(R.string.universal_choice_no_entry, choice.flavor.label),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
         }
     }
 }
