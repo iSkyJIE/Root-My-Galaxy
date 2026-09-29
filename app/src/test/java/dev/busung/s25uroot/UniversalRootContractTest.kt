@@ -116,7 +116,7 @@ class UniversalRootContractTest {
             ?.groupValues
             ?.get(1)
             ?: error("no applicationId in the app's build file")
-        val chainPath = Regex("""\.asciz "(/data/data/[^"]+/ksud)"""")
+        val chainPath = Regex("""\.asciz "(/data/user_de/0/[^"]+/ksud)"""")
             .find(source("app/src/main/cpp/dfroot/libc.S"))
             ?.groupValues
             ?.get(1)
@@ -124,7 +124,7 @@ class UniversalRootContractTest {
         assertEquals(
             "the chain reads the daemon from a directory that is not this app's data directory, so the file " +
                 "the app stages before the run would never be found",
-            "/data/data/$appId/ksud",
+            "/data/user_de/0/$appId/ksud",
             chainPath,
         )
     }

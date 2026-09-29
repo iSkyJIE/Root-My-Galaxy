@@ -25,7 +25,11 @@ ksud_path:
     // a different process and has no way to learn which app staged the file. `UniversalRootContractTest`
     // holds this string to the `applicationId` in app/build.gradle.kts, because a package rename would
     // otherwise break rooting in a way that looks like the exploit failing.
-    .asciz "/data/data/dev.rushiranpise.rmgnext/ksud"
+    // Device-protected, not `/data/data/...`, and this is a correctness fix rather than tidiness: `/data/data`
+    // is credential-encrypted storage, which is not mounted until the user unlocks. A run started from a boot
+    // broadcast can therefore look for this file while it does not exist - and a bind mount with no source
+    // fails silently, because the shellcode writes no marker on that path and the parent only sees a timeout.
+    .asciz "/data/user_de/0/dev.rushiranpise.rmgnext/ksud"
 logcat_path:
     .asciz "/system/bin/logcat"
 root_path:

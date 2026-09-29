@@ -292,7 +292,12 @@ internal object UniversalRootRun {
 
         // The chain's own path: the app's data directory, not its `files` directory - where the regular
         // flow's copies go - and not the temp directory, which no app may write on this platform.
-        val destination = File(context.filesDir.parentFile, DAEMON)
+        // Device-protected storage, matching the path the shellcode reads (`libc.S`'s `ksud_path`). `/data/data`
+        // is credential-encrypted and is not mounted until the user unlocks, so a boot-run retry - which is one
+        // of the two things this path is for - could not write the daemon there at all. The two must move
+        // together: a file placed in one storage and read from the other is a bind mount with no source, and
+        // that failure is silent.
+        val destination = File(context.createDeviceProtectedStorageContext().filesDir.parentFile, DAEMON)
         val temporary = File(destination.path + ".tmp")
         source.inputStream().use { input ->
             temporary.outputStream().use { output -> input.copyTo(output) }
