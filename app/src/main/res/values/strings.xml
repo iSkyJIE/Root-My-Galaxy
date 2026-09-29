@@ -37,7 +37,7 @@
     <string name="settings_section_system">System</string>
     <string name="settings_section_expand">Expand section</string>
     <string name="settings_section_collapse">Collapse section</string>
-    <string name="residue_card_title">Files left behind</string>
+    <string name="residue_card_title">Trash</string>
     <string name="residue_card_summary">Files left on the device</string>
     <string name="residue_reading">Reading…</string>
     <string name="residue_clean">Clean</string>
@@ -60,9 +60,9 @@
     <string name="residue_p0_cleared">Offset cleared. The next run will search for it again.</string>
     <string name="residue_p0_clear_skipped">Nothing was cleared: a run is in progress, and it writes the offset back when it ends.</string>
     <string name="residue_log_p0_cleared">Preparing files: cleared the cached p0 offset, so the next run on this boot searches for it again</string>
-    <string name="residue_log_p0_clear_skipped">Preparing files: asked for the cached p0 offset to be cleared and stood down, a run is in flight in another process</string>
+    <string name="residue_log_p0_clear_skipped">Preparing files: asked for the cached p0 offset to be cleared and did not run, a run is running in another process</string>
     <string name="residue_scope_clean_listed">The directory is empty.</string>
-    <string name="residue_scope_unlisted">This folder couldn\'t be listed. Only the files the app writes could be checked.</string>
+    <string name="residue_scope_unlisted">This folder could not be listed. Only the files the app writes could be checked.</string>
     <string name="residue_section_log">Files left behind: %1$s holds %2$d file(s), %3$s: %4$s</string>
     <string name="residue_role_backup">packages.xml copy</string>
     <string name="residue_role_other_install">not this app\'s</string>
@@ -74,7 +74,7 @@
     <string name="residue_delete_row">Delete %1$s</string>
     <string name="residue_delete_title">Delete %1$s?</string>
     <string name="residue_delete_mine">This file was created by the app</string>
-    <string name="residue_delete_other">This file wasn\'t created by the app</string>
+    <string name="residue_delete_other">This file was not created by the app</string>
     <string name="residue_delete_shared">Both Root My Galaxy apps use this file name. Deleting it may break the other one.</string>
     <string name="residue_delete_done">Deleted %1$s.</string>
     <string name="residue_delete_left">%1$s left.</string>
@@ -99,10 +99,10 @@
     <string name="residue_log_clear">Preparing files: cleared /data/local/tmp through a shell: removed %1$d item(s), %2$d could not be removed</string>
     <string name="residue_log_clear_kept">kept %1$d file(s) a run reads (%2$s)</string>
     <string name="residue_log_clear_none">Preparing files: asked for /data/local/tmp to be cleared and no shell answered</string>
-    <string name="residue_log_clear_skipped">Preparing files: asked for /data/local/tmp to be cleared and stood down, a run is in flight in another process</string>
+    <string name="residue_log_clear_skipped">Preparing files: asked for /data/local/tmp to be cleared and did not run, a run is running in another process</string>
     <string name="residue_clean_listed_body">The folder is empty: none of the %1$d files the app uses is here.</string>
     <string name="residue_clean_by_name_body">No shell answered, so only the %1$d files the app uses could be checked. None of them is here.</string>
-    <string name="residue_unlisted_body">This folder needs a shell to be checked. Other files may be in it.</string>
+    <string name="residue_unlisted_body">This folder needs a command shell to be checked. Other files may be in it.</string>
     <string name="residue_section_staged">Files from this app</string>
     <string name="residue_section_others">Other files in the folder</string>
     <string name="residue_others_body">Files in /data/local/tmp that this app did not create. They are listed because other apps can see them too.</string>
@@ -110,12 +110,12 @@
     <string name="residue_role_system">in /data/system</string>
     <string name="residue_role_kernelsu">KernelSU\'s</string>
     <string name="residue_size_folder">folder</string>
-    <string name="residue_size_unreadable">can\'t be read</string>
+    <string name="residue_size_unreadable">cannot be read</string>
 
-    <string name="residue_blind_body">The app can\'t read /data/local/tmp</string>
+    <string name="residue_blind_body">The app cannot read /data/local/tmp</string>
     <string name="residue_row_detail">%1$s · %2$s · %3$s</string>
     <string name="residue_row_kept">Kept: a run reads this file, so the app never deletes it.</string>
-    <string name="residue_row_kept_detail">The exploit reads it while it runs, and a boot that has staged a run cannot get it back without a reboot.</string>
+    <string name="residue_row_kept_detail">The exploit reads it while it runs, and a boot that has prepared a run cannot get it back without a restart.</string>
     <string name="residue_copy">Copy list</string>
     <string name="residue_role_daemon">KernelSU daemon</string>
     <string name="residue_role_helper">root helper</string>
@@ -130,7 +130,7 @@
     <string name="residue_log_clean_listed">Preparing files: %2$s was listed and holds none of the %1$d paths this app writes, and nothing else either</string>
     <string name="residue_log_clean_by_name">Preparing files: no shell answered, so %2$s could only be checked by name: none of the %1$d paths this app writes is on the device</string>
     <string name="residue_log_present">Preparing files: %1$d file(s), %2$s left in /data/local/tmp: %3$s</string>
-    <string name="residue_log_others">Preparing files: %1$d item(s) in /data/local/tmp that this app didn\'t stage: %2$s</string>
+    <string name="residue_log_others">Preparing files: %1$d item(s) in /data/local/tmp that this app did not stage: %2$s</string>
     <string name="residue_log_staged_and_others">Preparing files: %1$d file(s), %2$s left in /data/local/tmp: %3$s \u00b7 also %4$d not from this app: %5$s</string>
     <string name="residue_log_blind">Preparing files: %1$s could not be read from this app\'s own context, so what is there is unknown</string>
     <string name="settings_payload_mode">Payload mode</string>
@@ -141,19 +141,19 @@
     <string name="action_stop_run">Stop</string>
     <!--
         A run that was not started because the device is already on one. The three lines are the card, the
-        reason on it and the log: nothing was attempted, so there is no stage to report and no log to keep,
+        reason on it and the log: nothing was done, so there is no stage to report and no log to keep,
         and the reason has to carry the whole of what to do about it.
     -->
     <string name="status_run_in_flight">Another run is already running</string>
-    <string name="install_run_in_flight">An install is already running. Wait for it to finish, or restart the phone and try again.</string>
+    <string name="install_run_in_flight">An install is already running. Wait for it to finish, or reboot the phone and try again.</string>
     <string name="log_run_in_flight">[!] Not started: another run is already using this device.</string>
     <string name="status_run_stopped">Stopped</string>
-    <string name="phase_stopped">The install stopped at the step shown above. Stopping it doesn\'t undo changes already made.</string>
+    <string name="phase_stopped">The install stopped at the step shown above. Stopping it does not undo changes already made.</string>
     <string name="log_run_stopped">[*] Stopped during the %1$s step. Anything already started may still be running. The next run will check it again.</string>
     <string name="log_run_interrupted">[*] Run cancelled during the %1$s stage</string>
     <string name="retry_choice_title">Retry</string>
     <string name="retry_after_reboot">Reboot and retry</string>
-    <string name="retry_option_reboot_detail">Restart first. The install will try again once the phone is back.</string>
+    <string name="retry_option_reboot_detail">Reboot the phone first. The install will try again once the phone is back.</string>
     <string name="retry_now">Retry now</string>
     <string name="retry_option_now_detail">Not recommended</string>
     <string name="retry_wait">Wait, then retry</string>
@@ -164,16 +164,16 @@
     <string name="retry_waiting_start">Retry now</string>
     <string name="retry_waiting_cancel">Stop waiting</string>
     <string name="log_pipe_budget">[!] The exploit could not get enough memory (%1$s). This limit resets after a Reboot. Reboot the phone before trying again.</string>
-    <string name="error_pipe_budget_spent">This boot has already used the exploit\'s one allowed run. Restart the phone, then try again.</string>
-    <string name="install_pipe_budget_spent">This boot has used the exploit\'s limit. Waiting won\'t reset it. Restart the phone, then try again.</string>
-    <string name="retry_pipe_budget_hint">Retrying isn\'t offered here: this boot has used its memory limit for the exploit, and only a restart resets it.</string>
-    <string name="failure_pipe_budget">The kernel blocked the exploit: there wasn\'t enough memory. Restart the phone before trying again.</string>
+    <string name="error_pipe_budget_spent">This boot has already used the exploit\'s one run. Reboot the phone, then try again.</string>
+    <string name="install_pipe_budget_spent">This boot has used the exploit\'s limit. Waiting will not reset it. Reboot the phone, then try again.</string>
+    <string name="retry_pipe_budget_hint">Retrying is not offered here: this boot has used its memory limit for the exploit, and only a reboot resets it.</string>
+    <string name="failure_pipe_budget">The kernel blocked the exploit: there was not enough memory. Reboot the phone before trying again.</string>
     <string name="log_manager_refreshed">[*] Stopped %1$s, which was open across the load, so it reads the module that was just loaded</string>
     <string name="log_payload_may_still_run">[!] The exploit may still be running. Reboot the phone before trying again.</string>
-    <string name="install_payload_may_still_run">The exploit may still be running. Restart the phone before trying again: running it twice could freeze the phone.</string>
-    <string name="retry_single_payload_hint">Retry isn\'t available: the last exploit may still be running, and starting another one could freeze the phone.</string>
+    <string name="install_payload_may_still_run">The exploit may still be running. Reboot the phone before trying again: running it twice could freeze the phone.</string>
+    <string name="retry_single_payload_hint">Retry is not available: the last exploit may still be running, and starting another one could freeze the phone.</string>
     <string name="retry_armed_title">Retry scheduled</string>
-    <string name="retry_armed_body">The app couldn\'t restart the phone, because root and Shizuku aren\'t available. Restart it yourself, and the install will start when the phone is back.</string>
+    <string name="retry_armed_body">The app could not reboot the phone, because root and Shizuku are not available. Reboot it yourself, and the install will start when the phone is back.</string>
     <string name="install_load_modules">Soft Reboot</string>
     <string name="settings_cached_payload">Saved</string>
     <string name="settings_cached_payload_none">Not available</string>
@@ -195,7 +195,7 @@
     <string name="log_payload_origin">[*] payload origin=%1$s</string>
     <string name="run_plan_payload_mode">Payload mode</string>
     <string name="offline_cache_empty">Not available.</string>
-    <string name="offline_cached_artifact_invalid">The cached %1$s doesn\'t match</string>
+    <string name="offline_cached_artifact_invalid">The cached %1$s does not match</string>
     <string name="autoroot_stabilizing">Waiting for the phone to finish starting</string>
     <!--
       The boot gate's chip words, for the two waits before a run exists to name. The run's own phases are
@@ -208,41 +208,41 @@
     <string name="autoroot_prior_install_required">Root on boot needs a saved payload.</string>
     <string name="autoroot_failed">Install failed: %1$s</string>
     <string name="autoroot_failed_at">Install failed at %1$s: %2$s</string>
-    <string name="autoroot_not_started_title">Root on boot didn\'t start</string>
-    <string name="autoroot_not_started">Android didn\'t let the install run in the background after the restart. Open the app to install now.</string>
+    <string name="autoroot_not_started_title">Root on boot did not start</string>
+    <string name="autoroot_not_started">Android did not let the install run in the background after the restart. Open the app to install now.</string>
     <string name="autoroot_succeeded">%1$s root succeeded</string>
     <!-- A boot notification has to say which flow ran, because the two are started by two different things and
          only one of them was asked for by this boot. -->
     <string name="autoroot_universal_succeeded">%1$s root succeeded</string>
-    <string name="autoroot_succeeded_without_shell">Root obtained. Shizuku wasn\'t running, but this payload doesn\'t need a shell.</string>
+    <string name="autoroot_succeeded_without_shell">Root obtained. Shizuku was not running, but this payload does not need a shell.</string>
     <string name="autoroot_boot_changed">The phone restarted before the install started</string>
     <string name="autoroot_timed_out">The operation took too long</string>
     <string name="autoroot_shizuku_waiting">Waiting for Shizuku to start: %1$s</string>
     <string name="autoroot_shizuku_waiting_for_network">Waiting for Wi-Fi because Shizuku needs it to start: %1$s</string>
-    <string name="autoroot_shizuku_unavailable">Shizuku wasn\'t ready and didn\'t start within %1$s. Start it again, or install without Shizuku.</string>
-    <string name="autoroot_shizuku_needs_network">Shizuku couldn\'t start: wireless debugging needs Wi-Fi. Connect to Wi-Fi and start Shizuku, or install without it.</string>
-    <string name="autoroot_shizuku_unstartable">Shizuku is on, but the app can\'t start it: there is no root, no wireless pairing and no start code. Install without Shizuku, or turn off Root on boot.</string>
+    <string name="autoroot_shizuku_unavailable">Shizuku was not ready and did not start within %1$s. Start it again, or install without Shizuku.</string>
+    <string name="autoroot_shizuku_needs_network">Shizuku could not start: wireless debugging needs Wi-Fi. Connect to Wi-Fi and start Shizuku, or install without it.</string>
+    <string name="autoroot_shizuku_unstartable">Shizuku is on, but the app cannot start it: there is no root, no wireless pairing and no start code. Install without Shizuku, or turn off Root on boot.</string>
     <string name="autoroot_answer_retry_shizuku">Start Shizuku</string>
     <string name="autoroot_answer_standard">Run without Shizuku</string>
     <string name="autoroot_skip_retry">Skip retry</string>
     <string name="autoroot_skip_install">Skip install</string>
-    <string name="dfr_reroot_at_boot">Root on Boot (Helper)</string>
-    <string name="dfr_reroot_at_boot_detail">Root again after a reboot, without opening the app. Needs Shizuku running.</string>
+    <string name="dfr_reroot_at_boot">Auto Root via Helper</string>
+    <string name="dfr_reroot_at_boot_detail">Root again after a restart, without opening the app. Needs Shizuku running.</string>
     <string name="universal_step_check">Support check</string>
     <string name="universal_step_payload">Check the payload</string>
-    <string name="universal_no_payload">No payload could be resolved for this phone, so nothing was attempted.</string>
+    <string name="universal_no_payload">No payload could be resolved for this phone, so nothing was done.</string>
     <string name="universal_step_daemon">Stage the daemon</string>
     <string name="universal_step_exploit">Kernel exploit</string>
     <string name="universal_step_load">Load KernelSU</string>
-    <string name="universal_installed">Rooted \u2014 KernelSU is live in this boot.</string>
-    <string name="universal_no_device">This device could not be read, so nothing was attempted.</string>
-    <string name="universal_wrong_abi">This exploit is arm64 only, and this phone reports %1$s.</string>
-    <string name="universal_already_armed">This boot is already hooked. Reboot before running %1$s again \u2014 the exploit arms a marker only a reboot clears.</string>
-    <string name="universal_daemon_failed">The payload\'s daemon could not be downloaded or staged, so nothing was attempted.</string>
+    <string name="universal_installed">Rooted : KernelSU is live in this boot.</string>
+    <string name="universal_no_device">This device could not be read, so nothing was done.</string>
+    <string name="universal_wrong_abi">This exploit is arm64 only, and this phone shows %1$s.</string>
+    <string name="universal_already_armed">This boot is already hooked. Reboot before running %1$s again : the exploit arms a marker only a reboot clears.</string>
+    <string name="universal_daemon_failed">The payload\'s daemon could not be downloaded or prepared, so nothing was done.</string>
     <string name="universal_not_live">Nothing on this phone confirms root: no /system/bin/su, and an app cannot read the kernel. The chain finished, but this boot is not rooted.</string>
     <string name="dfr_dmc_fix">Keep Odin reachable</string>
-    <string name="dfr_dmc_fix_detail">Writes Samsung\'s DMC vault flag on every boot, so download mode stays available on the firmware that locks it behind a lock screen. Needs the helper installed.</string>
-    <string name="dfr_boot_title">Root on Boot (Helper)</string>
+    <string name="dfr_dmc_fix_detail">Writes Samsung\'s DMC setting on every boot, so download mode stays available on the firmware that locks it behind a lock screen. Needs the helper installed.</string>
+    <string name="dfr_boot_title">Auto Root via Helper</string>
     <string name="dfr_boot_channel_name">Root on Boot</string>
     <string name="dfr_boot_channel_description">Starts the helper after reboot if this boot has no root.</string>
     <string name="dfr_boot_checking">Checking if this boot needs root again</string>
@@ -250,23 +250,23 @@
     <string name="dfr_boot_starting">Starting the helper</string>
     <string name="dfr_boot_watching">The helper is running</string>
     <string name="dfr_boot_rerooted">Root restored \u00b7 KernelSU is loaded in this boot</string>
-    <string name="dfr_boot_no_root">The helper ran, but KernelSU didn\'t load. Open the flow to see why.</string>
+    <string name="dfr_boot_no_root">The helper ran, but KernelSU did not load. Open the flow to see why.</string>
     <string name="dfr_boot_start_refused">The helper could not be started: %1$s</string>
     <string name="dfr_boot_failed">Restoring root failed: %1$s</string>
-    <string name="dfr_boot_not_started_title">Root again after boot didn\'t start</string>
-    <string name="dfr_boot_not_started">Android blocked it after the reboot, so this boot has no root. Open the app to root now.</string>
-    <string name="dfr_boot_armed">Root wasn\'t restored: this boot already ran the exploit. Only a full reboot clears it.</string>
-    <string name="dfr_boot_no_helper">Root wasn\'t restored: the helper isn\'t installed. Set it up in the System UID install flow.</string>
-    <string name="dfr_boot_ordinary_helper">Root wasn\'t restored: the helper is a normal app, not a system app. Reinstall it from the flow.</string>
-    <string name="dfr_boot_stale_helper">Root wasn\'t restored: the helper on the phone is an older build. Install this app\u2019s helper from the flow.</string>
-    <string name="dfr_boot_no_shell">Root wasn\'t restored: nothing could start the helper. Start Shizuku, or open the app.</string>
+    <string name="dfr_boot_not_started_title">Root again after boot did not start</string>
+    <string name="dfr_boot_not_started">Android blocked it after the restart, so this boot has no root. Open the app to root now.</string>
+    <string name="dfr_boot_armed">Root was not restored: this boot already ran the exploit. Only a full reboot clears it.</string>
+    <string name="dfr_boot_no_helper">Root was not restored: the helper is not installed. Set it up in the Helper install flow.</string>
+    <string name="dfr_boot_ordinary_helper">Root was not restored: the helper is a normal app, not a system app. Reinstall it from the flow.</string>
+    <string name="dfr_boot_stale_helper">Root was not restored: the helper on the phone is an older build. Install this app\u2019s helper from the flow.</string>
+    <string name="dfr_boot_no_shell">Root was not restored: nothing could start the helper. Start Shizuku, or open the app.</string>
     <string name="dfr_boot_nothing_to_do">Nothing needs to be done on this boot.</string>
     <string name="dfr_boot_action_start_now">Start it now</string>
     <string name="autoroot_channel_name">Root on boot</string>
     <string name="autoroot_channel_description">Runs the install with the saved payload after a restart.</string>
     <string name="settings_section_wireless_adb">Wireless ADB</string>
-    <string name="error_shell_transport_shizuku_silent">This exploit needs a shell. Shizuku is on but isn\'t answering, and no wireless pairing is saved. Start Shizuku, or pair the phone in Settings → Wireless ADB.</string>
-    <string name="error_shell_transport_shizuku_off">This exploit needs a shell. Shizuku is off, and no wireless pairing is saved. Turn Shizuku on, or pair the phone in Settings → Wireless ADB.</string>
+    <string name="error_shell_transport_shizuku_silent">This exploit needs a command shell. Shizuku is on but is not answering, and no wireless pairing is saved. Start Shizuku, or pair the phone in Settings → Wireless ADB.</string>
+    <string name="error_shell_transport_shizuku_off">This exploit needs a command shell. Shizuku is off, and no wireless pairing is saved. Turn Shizuku on, or pair the phone in Settings → Wireless ADB.</string>
     <string name="log_transport_local_adb">[*] Transport: this device\'s ADB shell over wireless debugging</string>
     <string name="log_transport_shizuku">[*] Transport: Shizuku</string>
     <string name="log_transport_app">[*] Transport: app process</string>
@@ -279,12 +279,12 @@
     <string name="settings_wireless_adb_port_missing">Port not found</string>
     <string name="settings_wireless_adb_no_permission">Permission needed</string>
     <string name="settings_wireless_adb_failed">Connection failed</string>
-    <string name="wireless_adb_permission_detail">Wireless debugging is off and the app can\'t turn it on by itself. Grant permission with `%1$s`, install with `adb install -g`, or use root.</string>
+    <string name="wireless_adb_permission_detail">Wireless debugging is off and the app cannot turn it on by itself. Grant permission with `%1$s`, install with `adb install -g`, or use root.</string>
     <string name="wireless_adb_pair">Pair with a code</string>
     <string name="wireless_adb_pair_again">Pair again</string>
     <string name="wireless_adb_test">Test</string>
     <string name="wireless_adb_forget">Remove pairing</string>
-    <string name="wireless_adb_fingerprint">Key fingerprint</string>
+    <string name="wireless_adb_fingerprint">Key file fingerprint</string>
     <string name="wireless_adb_dialog_title">Wireless ADB</string>
     <string name="wireless_adb_pair_help">In Android, open Developer options → Wireless debugging → Pair device with pairing code. Enter the six-digit code below.</string>
     <string name="wireless_adb_forget_done">This app\'s wireless debugging pairing was removed. Use Pair again to create a new one.</string>
@@ -299,21 +299,21 @@
     <string name="adb_pair_working">Pairing…</string>
     <string name="adb_pair_success_title">Paired</string>
     <string name="adb_pair_success_text">This device now accepts the app\'s ADB key. Wireless debugging has been turned off again.</string>
-    <string name="adb_pair_success_shizuku">Paired. Starting Shizuku with the new transport.</string>
+    <string name="adb_pair_success_shizuku">Paired. Starting Shizuku with the new connection method.</string>
     <string name="adb_pair_failed_title">Pairing failed</string>
     <string name="adb_pair_cannot_connect">The pairing service rejected the connection. Make sure the pairing dialog is open and the code is still valid.</string>
     <string name="adb_pair_wrong_code">The code was rejected. The code expires quickly. Open the dialog again and use the new code.</string>
     <string name="adb_pair_unknown_error">Pairing stopped without an error message.</string>
     <string name="adb_pair_notification_permission_required">Notifications are needed to enter the pairing code, so pairing could not start.</string>
     <string name="settings_shizuku_token">Shizuku start code</string>
-    <string name="settings_shizuku_token_summary">Only needed when root and wireless pairing aren\'t available. Needs a Shizuku version that accepts start requests.</string>
+    <string name="settings_shizuku_token_summary">Only needed when root and wireless pairing are not available. Needs a Shizuku version that accepts start requests.</string>
     <string name="settings_shizuku_token_value_set">Set</string>
     <string name="settings_shizuku_token_value_unset">Not set</string>
     <string name="shizuku_start_attempt_log">Attempt details</string>
     <string name="shizuku_token_dialog_title">Shizuku start code</string>
     <string name="shizuku_token_dialog_label">Token</string>
     <string name="shizuku_token_dialog_help">Paste the code provided by your Shizuku version.</string>
-    <string name="settings_boot_gate_settle">Boot wait time</string>
+    <string name="settings_boot_gate_settle">Auto Root wait time</string>
     <string name="settings_boot_gate_settle_summary">How long the boot actions wait after a restart. If the phone has already been up that long, they start at once.</string>
     <string name="settings_boot_settle">Boot wait time</string>
     <string name="settings_boot_settle_summary">How long a new run waits after reboot before starting.</string>
@@ -356,7 +356,7 @@
     <string name="logs_copy">Copy log</string>
     <string name="logs_clear">Clear log</string>
     <string name="logs_clear_title">Clear the app log?</string>
-    <string name="logs_clear_body">Runs in History aren\'t affected.</string>
+    <string name="logs_clear_body">Runs in History are not affected.</string>
     <string name="logs_filter_all">All</string>
     <string name="logs_filter_info">Info</string>
     <string name="logs_filter_error">Errors</string>
@@ -397,9 +397,9 @@
     <!-- The flow's name itself is on RunKind.flowName, not here: it is the exploit and its CVE, which no
          language translates, and three surfaces show it - so a copy per locale would be three ways to spell
          one name. This line is what the name is followed by. -->
-    <!-- The detail card's version, in the place the transport line sits: a payload run says how it got its
+    <!-- The detail card's version, in the place the connection method line sits: a payload run says how it got its
          privileges (Shizuku or the helper), and this flow's answer is that it used neither. -->
-    <string name="history_kind_universal_detail">%1$s \u2014 no helper, no Shizuku</string>
+    <string name="history_kind_universal_detail">%1$s : no helper, no Shizuku</string>
     <string name="export_log">Export log</string>
     <string name="export_log_saved">Log saved</string>
     <string name="export_log_failed">Couldn\'t save log</string>
@@ -415,9 +415,9 @@
       somebody who wants to get on with it - and because each one is a thing they may act on later.
     -->
     <string name="guide_title">Read this first</string>
-    <string name="guide_what">This app uses a bug in the kernel to load KernelSU. It is temporary: a restart puts the phone back the way it was.</string>
+    <string name="guide_what">This app uses a kernel bug to load KernelSU. It is temporary: a reboot puts the phone back the way it was.</string>
     <string name="guide_helper">It installs a small helper app as a system app, and that helper is what does the work. Home says which step the phone is on, one step at a time.</string>
-    <string name="guide_permanent">Nothing here is permanent. No bootloader is unlocked and nothing is re-signed, and the helper and this app\'s key come off again in the System UID section.</string>
+    <string name="guide_permanent">Nothing here is permanent. No bootloader is unlocked and nothing is re-signed, and the helper and this app\'s key come off again in the Helper section.</string>
     <string name="guide_boot">Root lasts one boot. After a restart, run it again to load KernelSU.</string>
     <string name="guide_screen">A run can turn the screen off, because the display waking up is what most often kills the exploit. It is off by default - Settings has the switch - and the result comes to the notification either way.</string>
     <string name="guide_manager">KernelSU\'s manager is for approving apps. Anything it offers to install permanently is not what this app does.</string>
@@ -426,28 +426,28 @@
     <string name="guide_notifications_body">A run keeps its log in the app and says how it went in the notification, so you do not have to keep this screen open.</string>
     <string name="guide_notifications_allow">Allow notifications</string>
     <string name="guide_notifications_later">Not now</string>
-    <string name="guide_reread">Read the guide again</string>
+    <string name="guide_reread">Guide</string>
     <!--
       The questions this app is actually asked, one pair each. Short answers, because somebody who opens
       this has one of them and the answer to that one is the whole of what they need.
     -->
-    <string name="faq_title">Questions people ask</string>
+    <string name="faq_title">F.A.Q.</string>
     <string name="faq_keep_q">Does this change the phone for good?</string>
     <string name="faq_keep_a">No. Root lasts until the next restart, and nothing on the phone is re-signed or unlocked.</string>
     <string name="faq_again_q">Do I have to do it again after a restart?</string>
-    <string name="faq_again_a">Yes. KernelSU is loaded into the kernel afresh every boot, so run it again to get root back.</string>
+    <string name="faq_again_a">Yes. KernelSU is loaded into the kernel again every boot, so run it again to get root back.</string>
     <string name="faq_fails_q">Why does a run fail sometimes?</string>
-    <string name="faq_fails_a">The exploit races the kernel, so it does not always win. Try again, and restart the phone first if several runs in a row fail. If it keeps failing, the kernel check on Home says whether this phone can be rooted at all.</string>
+    <string name="faq_fails_a">The exploit timing issues the kernel, so it does not always win. Try again, and reboot the phone first if several runs in a row fail. If it keeps failing, the kernel check on Home says whether this phone can be rooted at all.</string>
     <string name="faq_screen_q">Why did the screen go off?</string>
     <string name="faq_screen_a">That is the screen-off switch in Settings, and it is off by default. With it on, a run turns the screen off so nothing else wakes the phone up while the exploit runs; the result comes to the notification.</string>
     <string name="faq_helper_q">Why was a second app installed?</string>
     <string name="faq_helper_a">That is the helper, and it is the app that does the work as the phone\'s own system user. Removing it undoes the install.</string>
     <string name="faq_after_q">What should I do once root works?</string>
-    <string name="faq_after_a">Open the KernelSU manager and approve the apps you want root for. Restart the phone when you are done.</string>
+    <string name="faq_after_a">Open the KernelSU manager and approve the apps you want root for. Reboot the phone when you are done.</string>
     <string name="faq_undo_q">How do I undo all of it?</string>
-    <string name="faq_undo_a">Clean up in the System UID section removes the helper and this app\'s key. A restart clears the rest.</string>
+    <string name="faq_undo_a">Clean up in the Helper section removes the helper and this app\'s key. A reboot clears the rest.</string>
     <string name="faq_which_q">Which phones does this work on?</string>
-    <string name="faq_which_a">The ones the payload repository lists for this exact model and kernel. The app refuses anything else.</string>
+    <string name="faq_which_a">The ones the payload list lists for this exact model and kernel. The app refuses anything else.</string>
     <string name="faq_shell_q">Do I need Shizuku?</string>
     <string name="faq_shell_a">Some steps need a shell on the phone, and Shizuku is one way to get one. The app can also pair with the phone\'s own wireless debugging.</string>
     <!--
@@ -455,9 +455,9 @@
       written for somebody whose model has no payload yet, so what the answer is *for* - do I wait for
       support, or is this phone never going to work - is in the card and not in a footnote.
     -->
-    <string name="kernel_check">Kernel check</string>
+    <string name="kernel_check">CVE-2026-43499 Test</string>
     <string name="kernel_check_body">Tests whether this phone\'s kernel still has the bug a run needs.</string>
-    <string name="kernel_check_why">Use it when this phone has no payload yet, to tell a fixed kernel from one we can still add.</string>
+    <string name="kernel_check_why">Use this when this phone has no payload yet, to tell a fixed kernel from one we can still add.</string>
     <string name="kernel_check_start">Test this phone</string>
     <string name="kernel_check_stop">Stop</string>
     <string name="kernel_check_again">Test again</string>
@@ -469,8 +469,8 @@
     <string name="kernel_check_vulnerable_support">Once a payload covers this model and kernel, a run here should work.</string>
     <string name="kernel_check_patched">This phone is fixed</string>
     <string name="kernel_check_patched_body">The kernel carries the fix, so no payload can work here.</string>
-    <string name="kernel_check_undecided">Could not tell</string>
-    <string name="kernel_check_undecided_body">The test did not get far enough to answer. Restart the phone and try again.</string>
+    <string name="kernel_check_undecided">Could not determine</string>
+    <string name="kernel_check_undecided_body">The test did not get far enough to answer. Reboot the phone and try again.</string>
     <string name="kernel_check_restarted">The phone restarted during the test</string>
     <string name="kernel_check_restarted_body">Only a kernel with the bug can be restarted by this test.</string>
     <string name="kernel_check_unfinished">The test did not finish</string>
@@ -493,27 +493,27 @@
     <string name="kernel_step_answer_detail">Say whether this phone can be rooted at all</string>
     <string name="kernel_step_answer_rootable">This phone can still be rooted</string>
     <string name="kernel_step_answer_fixed">This phone is fixed</string>
-    <string name="kernel_step_answer_unknown">Could not tell</string>
+    <string name="kernel_step_answer_unknown">Could not determine</string>
     <!--
-      What the steps mean, and what a restart means at each one. Two lists rather than one because the two
+      What the steps mean, and what a reboot means at each one. Two lists rather than one because the two
       screens do different things - a run installs root, the check only asks a question - and the answers to
-      "what happens if I restart now" are different enough that one list would have to say both.
+      "what happens if I reboot now" are different enough that one list would have to say both.
     -->
-    <string name="step_guide_title">What these steps mean</string>
+    <string name="step_guide_title">What each step does</string>
     <string name="step_guide_run">When a payload covers this phone</string>
     <string name="step_guide_restart">After a restart: %1$s</string>
     <string name="guide_step_support_meaning">The app checks that this phone\'s model and kernel are ones it has a payload for.</string>
-    <string name="guide_step_download_meaning">The app downloads the payload and checks its size and fingerprint against the ones the list states.</string>
-    <string name="guide_step_download_restart">The payload is saved on the phone, so a restart keeps it and the next run does not download it again.</string>
+    <string name="guide_step_download_meaning">The app downloads the payload and checks its size and file fingerprint against the ones the list states.</string>
+    <string name="guide_step_download_restart">The payload is saved on the phone, so a reboot keeps it and the next run does not download it again.</string>
     <string name="guide_step_exploit_meaning">The exploit uses a bug in the kernel to get root, and it can take several tries.</string>
-    <string name="guide_step_exploit_restart">Root lives only in memory, so a restart clears it. Restarting Android alone may not be enough, and the app asks for a full restart when that is what it needs.</string>
+    <string name="guide_step_exploit_restart">Root lives only in memory, so a reboot clears it. Rebooting Android alone may not be enough, and the app asks for a full reboot when that is what it needs.</string>
     <string name="guide_step_ksu_meaning">The app loads KernelSU with the root it just got and checks that KernelSU answers.</string>
-    <string name="guide_step_ksu_restart">KernelSU is loaded fresh every boot, so after a restart you run again - or let root on boot do it for you.</string>
+    <string name="guide_step_ksu_restart">KernelSU is loaded fresh every boot, so after a reboot you run again - or let root on boot do it for you.</string>
     <string name="guide_kernel_version_meaning">The app reads this phone\'s kernel version and compares it with the version that has the fix.</string>
-    <string name="guide_kernel_test_meaning">The app runs a test that takes about a minute, and only a kernel with the bug can refuse to stop it or restart the phone.</string>
-    <string name="guide_kernel_test_restart">A test that finds the bug can leave a process the phone cannot clear until it restarts, and can restart the phone by itself.</string>
+    <string name="guide_kernel_test_meaning">The app runs a test that takes about a minute, and only a kernel with the bug can refuse to stop it or reboot the phone.</string>
+    <string name="guide_kernel_test_restart">A test that finds the bug can leave a process the phone cannot clear until it restarts, and can reboot the phone by itself.</string>
     <string name="guide_kernel_answer_meaning">The app says whether any payload could ever work on this phone.</string>
-    <string name="kernel_check_needs_restart">Restart the phone to clear it.</string>
+    <string name="kernel_check_needs_restart">Reboot the phone to clear it.</string>
     <string name="kernel_check_failed">The test could not run on this phone.</string>
     <string name="about_title">About Root My Galaxy Next</string>
     <string name="about_description">Information about Root My Galaxy Next</string>
@@ -530,24 +530,24 @@
     <string name="step_download_detail">Load the support list</string>
     <string name="step_support_detail_universal">Check the device and this boot</string>
     <string name="step_daemon_title">Stage the daemon</string>
-    <string name="step_daemon_detail">Resolve the payload and stage its daemon</string>
+    <string name="step_daemon_detail">Stage the daemon and check the phone</string>
     <string name="step_exploit_detail_universal">Patch the vendor libraries and load the module</string>
-    <string name="step_ksu_detail_universal">Start the daemon and check the phone</string>
+    <string name="step_ksu_detail_universal">Start the service and check the phone</string>
     <string name="step_exploit_title">Kernel exploit</string>
     <string name="step_exploit_detail">Get temporary root</string>
     <string name="step_ksu_title">Load KernelSU</string>
     <string name="step_ksu_detail">Load KernelSU and check that it works</string>
     <string name="phase_checking">Checking device and firmware support</string>
     <string name="phase_ready">Ready to install</string>
-    <string name="phase_downloading">Downloading verified payloads from GitHub</string>
+    <string name="phase_downloading">Downloading verified payload files from GitHub</string>
     <string name="phase_exploiting">This may take 10 minutes or more. The phone may get hot or stop responding for a short time.</string>
     <string name="phase_loading_ksu">Loading KernelSU using the root access we got</string>
     <string name="phase_installed">KernelSU was loaded and checked successfully</string>
-    <string name="phase_root_only">Root obtained, but KernelSU wasn\'t loaded</string>
+    <string name="phase_root_only">Root obtained, but KernelSU was not loaded</string>
     <string name="phase_failed">Check the log below to see where it failed</string>
 
     <string name="status_ksu_active">KernelSU active</string>
-    <string name="status_root_only">Root obtained. KernelSU is switched off in Settings, so it wasn\'t loaded.</string>
+    <string name="status_root_only">Root obtained. KernelSU is switched off in Settings, so it was not loaded.</string>
     <string name="status_not_installed">Not installed</string>
     <!-- The install card's title before anything has been read. It is the state's own message rather than the
          card's, so a phase with nothing to say cannot leave the button blank. -->
@@ -555,11 +555,11 @@
     <string name="status_support_failed">Support check failed</string>
     <string name="status_cache_missing">No cached payload</string>
     <string name="status_checking_github">Checking GitHub support list</string>
-    <string name="status_downloading_payload">Downloading payloads</string>
+    <string name="status_downloading_payload">Downloading payload files</string>
     <string name="notification_channel_boot">Boot installation</string>
     <string name="notification_channel_shizuku">Shizuku startup</string>
     <string name="notification_boot_waiting_network">Waiting for network</string>
-    <string name="notification_boot_offline">No network after boot; root wasn\'t re-established</string>
+    <string name="notification_boot_offline">No network after boot; root was not re-established</string>
     <string name="status_exploit_running">Running kernel exploit</string>
     <string name="status_ksu_loading">Loading KernelSU</string>
     <string name="status_install_failed">Install failed</string>
@@ -570,22 +570,22 @@
     <string name="log_payload_source">[+] Payload source: %1$s</string>
     <string name="log_download_verified">[+] Payload download complete</string>
     <string name="log_install_complete">[+] Install complete</string>
-    <string name="log_root_only_complete">[+] Run complete: root acquired; KernelSU wasn\'t loaded</string>
-    <string name="log_postroot_permission_failed">[!] Secure settings permission wasn\'t granted: %1$s</string>
+    <string name="log_root_only_complete">[+] Run complete: root acquired; KernelSU was not loaded</string>
+    <string name="log_postroot_permission_failed">[!] Secure settings permission was not granted: %1$s</string>
     <string name="log_grant_already">[*] Secure settings permission is already granted</string>
     <string name="log_grant_granted">[+] Secure settings permission granted through %1$s; wireless debugging can now be enabled without a cable.</string>
-    <string name="log_grant_failed">[!] Secure settings permission wasn\'t granted through %1$s: %2$s</string>
-    <string name="log_grant_no_transport">[!] Secure settings permission wasn\'t granted because root, Shizuku, and wireless pairing aren\'t available.</string>
+    <string name="log_grant_failed">[!] Secure settings permission was not granted through %1$s: %2$s</string>
+    <string name="log_grant_no_transport">[!] Secure settings permission was not granted because root, Shizuku, and wireless pairing are not available.</string>
     <string name="grant_transport_root">Root</string>
     <string name="grant_transport_shizuku">Shizuku</string>
     <string name="grant_transport_local_adb">the device\'s own ADB shell</string>
-    <string name="grant_silent_refusal">the command exited with %1$d, but permission wasn\'t granted</string>
+    <string name="grant_silent_refusal">the command exited with %1$d, but permission was not granted</string>
     <string name="grant_already_message">The secure-settings permission is already granted.</string>
     <string name="grant_done_message">Granted through %1$s. Wireless debugging can now be enabled without a cable.</string>
     <string name="grant_refused_message">%1$s could not grant the permission: %2$s</string>
     <string name="grant_no_transport_message">No available method can give this permission. Use a computer and run `adb shell pm grant %1$s android.permission.WRITE_SECURE_SETTINGS`.</string>
     <string name="grant_action">Give secure settings permission</string>
-    <string name="wireless_adb_permission_note">This app doesn\'t have WRITE_SECURE_SETTINGS, so it can\'t turn on wireless debugging by itself. Root, Shizuku, or wireless pairing can grant it.</string>
+    <string name="wireless_adb_permission_note">This app does not have WRITE_SECURE_SETTINGS, so it cannot turn on wireless debugging by itself. Root, Shizuku, or wireless pairing can grant it.</string>
     <string name="log_bootstrap_root">[+] Bootstrap root acquired</string>
     <string name="log_ro_blocks_successful">[+] Set %1$d partitions to read-only</string>
     <string name="log_ro_blocks_failed">[!] Couldn\'t set partitions to read-only</string>
@@ -599,52 +599,52 @@
     <string name="log_ksu_modules_absent">[*] Nothing to move from %1$s</string>
     <string name="log_ksu_modules_move_failed">[!] KernelSU modules could not be moved (%1$s)</string>
     <string name="log_ksu_modules_restore_failed">[!] KernelSU modules are still at %1$s. Move them back to %2$s (%3$s).</string>
-    <string name="log_ksu_staged">[+] KernelSU staging complete</string>
+    <string name="log_ksu_staged">[+] KernelSU staged for the next boot</string>
     <!--
       The run's own copy of a line the app also logs when it finds root on a screen: the late-load renamed
-      the daemon out of the stage file, and the file the next boot reads has to be written back before this
+      the service out of the stage file, and the file the next boot reads has to be written back before this
       phone is Rebooted.
     -->
-    <string name="log_ksu_stage_for_next_boot">[+] KernelSU daemon written back for the next boot</string>
-    <string name="log_ksu_stage_for_next_boot_failed">[!] The KernelSU service could not be saved for the next boot. Without it, KernelSU could not start after a reboot.</string>
+    <string name="log_ksu_stage_for_next_boot">[+] KernelSU service written back for the next boot</string>
+    <string name="log_ksu_stage_for_next_boot_failed">[!] The KernelSU service could not be saved for the next boot. Without it, KernelSU could not start after a restart.</string>
     <string name="log_ksu_staged_early">[+] KernelSU service prepared before the exploit. It must be ready for KernelSU to load after temporary root is gained.</string>
-    <string name="log_local_adb_shell_ready">[+] Local ADB shell transport ready: u:r:shell:s0</string>
+    <string name="log_local_adb_shell_ready">[+] Local ADB shell connection method ready: u:r:shell:s0</string>
     <string name="log_restart_after_root">[*] Rebooting userspace so KernelSU can load the modules.</string>
-    <string name="log_restart_after_root_accepted">[+] KernelSU accepted the soft reboot; modules are being applied.</string>
-    <string name="log_restart_after_root_refused">[!] Root succeeded, but KernelSU rejected the soft reboot: %1$s</string>
-    <string name="settings_restart_after_root">Auto soft reboot</string>
-    <string name="settings_restart_after_root_summary">Restart Android after root is obtained</string>
+    <string name="log_restart_after_root_accepted">[+] KernelSU accepted the soft restart; modules are being applied.</string>
+    <string name="log_restart_after_root_refused">[!] Root succeeded, but KernelSU rejected the soft restart: %1$s</string>
+    <string name="settings_restart_after_root">Auto soft restart</string>
+    <string name="settings_restart_after_root_summary">Reboot Android after root is obtained</string>
     <string name="autoroot_apply_modules">Apply modules</string>
     <string name="autoroot_retry_title">Retry install</string>
     <string name="retry_armed_pending_title">Retry is scheduled</string>
-    <string name="retry_armed_pending_body">The install scheduled before the restart hasn\'t run yet. Start it now or cancel it.</string>
+    <string name="retry_armed_pending_body">The install scheduled before the reboot hasn\'t run yet. Start it now or cancel it.</string>
     <string name="retry_armed_next_boot_title">Retry scheduled for the next restart</string>
-    <string name="retry_armed_next_boot_body">The next restart will try the install once, even with Root on boot switched off. Cancel if you don\'t want that.</string>
+    <string name="retry_armed_next_boot_body">The next reboot will try the install once, even with Root on boot switched off. Cancel if you don\'t want that.</string>
     <string name="retry_armed_start">Start now</string>
     <string name="retry_armed_payload">Retry will run: %1$s</string>
     <string name="retry_armed_payload_from">From %1$s</string>
     <string name="retry_armed_payload_from_at">From %1$s at %2$s</string>
-    <string name="retry_armed_payload_none">No payload was recorded for this retry, so the restart will use the saved payload.</string>
+    <string name="retry_armed_payload_none">No payload was recorded for this retry, so the reboot will use the saved payload.</string>
     <string name="retry_armed_cancel">Cancel</string>
-    <string name="log_ksu_staged_late_only">[*] No shell was available to prepare KernelSU before the exploit. KernelSU will be prepared after the exploit instead.</string>
-    <string name="log_ksu_control_verified">[+] KernelSU control channel verified (%1$s)</string>
+    <string name="log_ksu_staged_late_only">[*] No shell was available to stage KernelSU before the exploit. KernelSU will be staged after the exploit instead.</string>
+    <string name="log_ksu_control_verified">[+] KernelSU connection verified (%1$s)</string>
     <string name="log_ksu_control_verified_despite">[+] KernelSU is loaded, but the payload\'s own check failed. The load counts because %1$s.</string>
     <string name="log_ksu_control_readings">[*] Control channel readings: %1$s</string>
-    <string name="error_ksu_not_ready">KernelSU finished loading but can\'t be reached yet. Root isn\'t ready.</string>
-    <string name="error_ksu_unconfirmed">KernelSU finished loading, but the app couldn\'t check it. Open KernelSU Manager to see whether it loaded.</string>
-    <string name="error_helper_unavailable">The helper file isn\'t executable</string>
+    <string name="error_ksu_not_ready">KernelSU finished loading but cannot be reached yet. Root is not ready.</string>
+    <string name="error_ksu_unconfirmed">KernelSU finished loading, but the app could not check it. Open KernelSU Manager to see whether it loaded.</string>
+    <string name="error_helper_unavailable">The helper file is not executable</string>
     <string name="error_exploit_stalled">The exploit stopped printing %1$d seconds ago</string>
     <string name="error_exploit_timeout">The exploit ran past the %1$d-minute limit</string>
-    <string name="stage_transport">Starting transport</string>
-    <string name="stage_target">Resolving payload for this device</string>
-    <string name="stage_download">Downloading payloads</string>
+    <string name="stage_transport">Starting connection method</string>
+    <string name="stage_target">Finding a payload for this device</string>
+    <string name="stage_download">Downloading payload files</string>
     <string name="stage_exploit">Running kernel exploit</string>
     <string name="stage_kernel_su">Loading KernelSU</string>
-    <string name="stage_verify">Verifying KernelSU control channel</string>
-    <!-- The universal root's own stages. Its second step resolves a payload and stages a daemon, where the
+    <string name="stage_verify">Verifying KernelSU connection</string>
+    <!-- The universal root's own stages. Its second step resolves a payload and stages a service, where the
          payload flow's downloads a payload and resolves a target, so the two cannot share a sentence. -->
     <string name="universal_stage_support">Checking the device and this boot</string>
-    <string name="universal_stage_payload">Resolving the payload and staging the daemon</string>
+    <string name="universal_stage_payload">Finding the payload and preparing the service</string>
     <string name="universal_stage_exploit">Running the kernel exploit</string>
     <!--
       The manager step of a run: the manager app of the flavour the payload loads, which is what drives the
@@ -661,7 +661,7 @@
     <string name="manager_error_download">the APK could not be downloaded</string>
     <string name="manager_error_no_shell">no shell can install it on this phone</string>
     <string name="manager_error_no_installer">this phone has nothing that will open an APK</string>
-    <string name="manager_error_not_installed_yet">the %1$s manager wasn\'t installed in the %2$d seconds a run waits</string>
+    <string name="manager_error_not_installed_yet">the %1$s manager was not installed in the %2$d seconds a run waits</string>
     <string name="manager_present">The %1$s manager is already installed (%2$s)</string>
     <string name="manager_version_unread">version could not be read</string>
     <string name="manager_installed_toast">The %1$s manager is installed</string>
@@ -669,7 +669,7 @@
     <string name="manager_failed_toast">The %1$s manager could not be installed: %2$s</string>
     <string name="log_manager_present">[*] %1$s</string>
     <string name="log_manager_installed">[+] Installed the %1$s %2$s manager with %3$s</string>
-    <string name="log_manager_failed">[!] Continuing without the %1$s manager: %2$s. Install it from Settings when possible, or the new root won\'t have a manager to control it.</string>
+    <string name="log_manager_failed">[!] Continuing without the %1$s manager: %2$s. Install it from Settings when possible, or the new root will not have a manager to control it.</string>
     <string name="status_manager_check">Checking the %1$s manager</string>
     <string name="status_stage_failed">Failed at: %1$s</string>
     <string name="failure_stage">Stage</string>
@@ -687,17 +687,17 @@
     </plurals>
     <string name="error_payload_exit">The payload failed with code %1$d%2$s</string>
     <string name="error_success_marker">The exploit\'s success markers weren\'t found</string>
-    <string name="error_local_adb_shell">The phone\'s ADB shell isn\'t available: %1$s</string>
+    <string name="error_local_adb_shell">The phone\'s ADB shell is not available: %1$s</string>
     <string name="error_ksu_stage">Preparing KernelSU failed: %1$s</string>
-    <string name="error_ksu_verify">KernelSU couldn\'t be loaded or checked (rc=%1$d): %2$s</string>
-    <string name="error_helper_timeout">The KernelSU helper didn\'t finish within 120 seconds%1$s</string>
+    <string name="error_ksu_verify">KernelSU could not be loaded or checked (rc=%1$d): %2$s</string>
+    <string name="error_helper_timeout">The KernelSU helper did not finish within 120 seconds%1$s</string>
     <string name="error_boot_id">Couldn\'t read the phone\'s boot ID</string>
     <string name="error_receipt">Couldn\'t save the install record</string>
 
     <string name="artifact_exploit">exploit</string>
     <string name="artifact_kernelsu">KernelSU</string>
-    <!-- The daemon's own label, which differs between the two flavours it can come from. -->
-    <string name="artifact_daemon">%1$s daemon</string>
+    <!-- The service's own label, which differs between the two flavours it can come from. -->
+    <string name="artifact_daemon">%1$s service</string>
     <!--
         One line each, deliberately. The selected flavour rides in the card's value column, which
         leaves this description about nineteen characters before it wraps - measured on the phone, not
@@ -715,14 +715,14 @@
     <string name="repo_source_failed">%1$s: %2$s</string>
     <string name="repo_source_missing">Payload source %1$s is no longer configured</string>
     <string name="repo_downloading">Downloading %1$s</string>
-    <string name="repo_size_mismatch">%1$s size doesn\'t match the support manifest</string>
+    <string name="repo_size_mismatch">%1$s size does not match the support manifest</string>
     <string name="repo_size_exceeded">%1$s exceeds the declared size</string>
     <string name="repo_incomplete">%1$s download is incomplete</string>
-    <string name="repo_hash_mismatch">%1$s doesn\'t match the SHA-256 declared by the source</string>
+    <string name="repo_hash_mismatch">%1$s does not match the SHA-256 declared by the source</string>
     <string name="repo_finalize_failed">Couldn\'t finalize the %1$s file</string>
     <string name="repo_verified">%1$s verified</string>
     <string name="repo_commit_invalid">GitHub returned an invalid commit SHA</string>
-    <string name="repo_url_invalid">This payload repository isn\'t allowed</string>
+    <string name="repo_url_invalid">This payload list is not allowed</string>
     <string name="repo_response_too_large">The server response was too large</string>
     <string name="repo_api_limited">GitHub rate limit reached; try again in a few minutes</string>
     <string name="open_github">Open GitHub</string>
@@ -744,7 +744,7 @@
     <string name="log_screen_still_off">The screen is still off. Press power to wake it.</string>
     <string name="partition_read_only">Protect system partitions</string>
     <!--
-        What a failure this protection caused says. The switch is named from its own label rather than
+        What a failure this security level caused says. The switch is named from its own label rather than
         from a copy of the words, so a rename can never leave this pointing at a setting that is gone.
         Says "image partitions", not "read-only file system": the kernel's own wording belongs in the
         log, and repeating it here would read as the device's complaint rather than as this app's switch.
@@ -811,7 +811,7 @@
     <string name="run_plan_source_none">Not recorded</string>
     <string name="run_plan_offline_no_cache">Offline mode has no saved payload. Run an online install first.</string>
     <string name="run_plan_transport">Transport</string>
-    <string name="run_plan_transport_shizuku">Shizuku: the payload and helper are staged in /data/local/tmp</string>
+    <string name="run_plan_transport_shizuku">Shizuku: the payload and helper are prepared in /data/local/tmp</string>
     <string name="run_plan_transport_direct">Direct: helper runs from app storage</string>
     <string name="run_plan_fresh_yes">Fresh session: one attempt, timed by the payload, with no saved offset.</string>
     <string name="run_plan_fresh_no">Saved session: up to 24 attempts, reusing this boot\'s offset when there is one.</string>
@@ -831,14 +831,14 @@
     <string name="run_limits_total">Whole run</string>
     <string name="run_limits_total_note">The longest one run may take. A fresh-session payload always gets at least an hour, because it sets its own pace.</string>
     <string name="run_limits_stall">No output before the run counts as stuck</string>
-    <string name="run_limits_stall_note">How long the payload may stay silent before the app stops it. Some payloads are quiet for a while, so a short limit can stop a run that was working.</string>
+    <string name="run_limits_stall_note">How long the payload may stay silent before the app stops it. Some payload files are quiet for a while, so a short limit can stop a run that was working.</string>
     <string name="run_limits_reset">Reset to defaults</string>
     <string name="run_limits_reset_done">Run limits and the payload override are back to their defaults</string>
     <string name="run_limits_helper">One helper command</string>
     <string name="run_limits_helper_note">How long one helper command may run. This rarely needs changing.</string>
-    <string name="run_limits_payload_note">The payload profile sets the number of tries, the time limits and the exploit method. Leave this off unless you are testing a phone the feed doesn\'t list yet.</string>
+    <string name="run_limits_payload_note">The payload profile sets the number of tries, the time limits and the exploit method. Leave this off unless you are testing a phone the feed does not list yet.</string>
     <string name="run_limits_override">Use my own settings</string>
-    <string name="run_limits_override_note">Uses this app\'s numbers for attempts, timeouts, the exploit route and the p0 window base instead of the payload\'s. For testing a phone the feed doesn\'t list; it can also make a working phone fail. The run plan shows where each number came from. A fresh session still gets one attempt.</string>
+    <string name="run_limits_override_note">Uses this app\'s numbers for attempts, timeouts, the exploit route and the p0 window base instead of the payload\'s. For testing a phone the feed does not list; it can also make a working phone fail. The run plan shows where each number came from. A fresh session still gets one attempt.</string>
     <string name="run_limits_override_attempts">Attempts</string>
     <string name="run_limits_override_timeout">Timeout for each attempt</string>
     <string name="run_limits_override_route">Exploit route</string>
@@ -880,12 +880,12 @@
     <string name="local_payload_replace">Replace file</string>
     <string name="local_payload_remove">Remove payload</string>
     <string name="local_payload_not_so">Select a .so file</string>
-    <string name="local_payload_not_elf">That file isn\'t a valid ELF library</string>
+    <string name="local_payload_not_elf">That file is not a valid ELF library</string>
     <string name="local_payload_too_large">The selected file is larger than 16 MiB</string>
     <string name="local_payload_read_failed">Couldn\'t read the selected file</string>
     <string name="local_payload_missing">The imported payload is no longer in app storage. Import it again.</string>
     <string name="repo_using_local_payload">Using local payload: %1$s</string>
-    <string name="dfr_title">System UID install</string>
+    <string name="dfr_title">Root via Helper</string>
     <string name="dfr_description">Runs an APK as a system app, so root no longer needs the exploit.</string>
     <string name="dfr_summary">Installs the helper as a system app. Add the certificate first, then Reboot, then install: a system app is only accepted on a fresh boot.</string>
     <string name="dfr_apk_default">This build has no helper APK, so there is nothing to install.</string>
@@ -905,7 +905,7 @@
     <string name="dfr_log_build_current">[*] helper build: %1$d on the phone, %2$d in this APK - the same build</string>
     <string name="dfr_log_build_different">[*] helper build: %1$d on the phone, %2$d in this APK - another build\'s helper</string>
     <string name="dfr_log_build_absent">[*] helper build: nothing installed on the phone, so there is nothing to compare</string>
-    <string name="dfr_log_stage">[*] daemon stage: %1$s - %2$s</string>
+    <string name="dfr_log_stage">[*] service stage: %1$s - %2$s</string>
     <string name="dfr_log_build_unreadable">[*] helper build: %1$d on the phone, and the helper APK in this app could not be read</string>
     <string name="dfr_stage_not_installed">not installed</string>
     <string name="dfr_stage_system">installed as a system app</string>
@@ -913,20 +913,20 @@
     <string name="dfr_yes">yes</string>
     <string name="dfr_no">no</string>
     <string name="dfr_no_root">No root shell answered.</string>
-    <string name="dfr_removal_no_answer">The root shell didn\'t answer. The phone may still be restarting. Open this screen again once it is back.</string>
+    <string name="dfr_removal_no_answer">The root shell did not answer. The phone may still be restarting. Open this screen again once it is back.</string>
     <!-- One shell or the other, for the commands both of them can run: see DfrInstall.installStageTwo. -->
     <string name="dfr_no_shell">Neither a root shell nor Shizuku\'s answered.</string>
     <string name="dfr_stage_no_root">Preparing the KernelSU service needs root. Installing the helper does not.</string>
 
-    <!-- The daemon stage file as the device describes it: four markers and the silence. -->
+    <!-- The service stage file as the device describes it: four markers and the silence. -->
     <string name="dfr_stage_armed">Valid</string>
-    <string name="dfr_stage_armed_detail">The file is there, and it is the daemon this device is running.</string>
+    <string name="dfr_stage_armed_detail">The file is there, and it is the service this device is running.</string>
     <string name="dfr_stage_absent">Absent</string>
     <string name="dfr_stage_absent_detail">KernelSU\'s service file is missing, so rooting after the next reboot would fail.</string>
-    <string name="dfr_stage_different">Another build\'s daemon</string>
+    <string name="dfr_stage_different">Another build\'s service</string>
     <string name="dfr_stage_different_detail">The file is another KernelSU version. A reboot could load the wrong one.</string>
     <string name="dfr_stage_uncompared">Not compared</string>
-    <string name="dfr_stage_uncompared_detail">The file is there, but the running KernelSU service couldn\'t be checked.</string>
+    <string name="dfr_stage_uncompared_detail">The file is there, but the running KernelSU service could not be checked.</string>
     <string name="dfr_stage_unreadable">Not read</string>
     <string name="dfr_stage_unreadable_detail">Nothing was read: no shell answered. Give this app root or start Shizuku, then come back.</string>
     <string name="dfr_no_helper">This build has no helper APK. Nothing was written to the device.</string>
@@ -934,16 +934,16 @@
 
     <!-- The flow's step list. Each step is a row, and the one the phone is on says why it is next. -->
     <string name="dfr_step_no_helper">This build has no helper</string>
-    <string name="dfr_step_no_helper_detail">This build doesn\'t include a helper APK, so there is nothing to install or inject.</string>
+    <string name="dfr_step_no_helper_detail">This build does not include a helper APK, so there is nothing to install or inject.</string>
     <string name="dfr_step_helper_unwritable">The helper could not be unpacked</string>
     <string name="dfr_step_helper_unwritable_detail">The helper APK could not be written to the app\'s storage, usually because the phone is out of space. Free some space and refresh. Nothing was changed on the device.</string>
     <string name="dfr_step_read">Read the device</string>
     <string name="dfr_step_read_detail">Reading the certificate list needs root or Shizuku. Give this app one of them, then try again.</string>
     <string name="dfr_clean_up_confirm_title">Remove what this flow put on the phone?</string>
-    <string name="dfr_clean_up_key">This app\'s certificate, added to the system user\'s list in /data/system/packages.xml. The removal takes effect after a reboot.</string>
+    <string name="dfr_clean_up_key">This app\'s certificate, added to the system user\'s list in /data/system/packages.xml. The removal takes effect after a restart.</string>
     <string name="dfr_clean_up_key_unread">This app\'s certificate is removed if it is in the system user\'s list.</string>
     <string name="dfr_clean_up_helper">The RMG-NEXT helper app, installed as a system app.</string>
-    <string name="dfr_clean_up_helper_waiting">The RMG-NEXT helper app, installed as a system app. It is removed after the reboot, when Android has read the file without the certificate.</string>
+    <string name="dfr_clean_up_helper_waiting">The RMG-NEXT helper app, installed as a system app. It is removed after the restart, when Android has read the file without the certificate.</string>
     <string name="dfr_clean_up_nothing">Neither the certificate nor the helper is on the phone, so there is nothing to remove.</string>
     <string name="dfr_clean_up_note">Two files this flow leaves in /data/system are not touched here. They are listed under Files left on the device.</string>
     <string name="dfr_clean_up_helper_waiting_run">The helper stays installed for now. It is removed in the step after the restart.</string>
@@ -958,7 +958,7 @@
     <string name="dfr_step_reboot">Soft Reboot</string>
     <string name="dfr_step_reboot_detail">The phone reads this list at boot, so reboot to apply it. A soft reboot is enough.</string>
     <string name="dfr_step_remove">Remove Helper</string>
-    <string name="dfr_step_remove_detail">The helper installed as a normal app. Remove it, reboot, then install it again.</string>
+    <string name="dfr_step_remove_detail">The helper installed as a normal app. Remove it, restart, then install it again.</string>
     <string name="dfr_step_install">Install Helper</string>
     <string name="dfr_step_install_detail">Installs the helper APK this app carries. This is the step that makes it a system app. Root is not needed: Shizuku can run the install.</string>
     <string name="dfr_step_stale">Install Helper</string>
@@ -977,40 +977,40 @@
     <string name="dfr_action_open_stage2">Open Helper</string>
     <string name="shizuku_mode">Use Shizuku</string>
     <string name="shizuku_mode_description">Run the payload through Shizuku. This may be more reliable.</string>
-    <string name="shizuku_mode_without_permission">On, but this app doesn\'t have permission to use Shizuku. Runs will use another method until it is granted.</string>
-    <string name="shizuku_mode_not_running">On, but Shizuku isn\'t running.</string>
+    <string name="shizuku_mode_without_permission">On, but this app does not have permission to use Shizuku. Runs will use another method until it is granted.</string>
+    <string name="shizuku_mode_not_running">On, but Shizuku is not running.</string>
     <string name="settings_recovery">Recovery</string>
-    <string name="recovery_confirm_restart_zygote">Restart Android?</string>
-    <string name="recovery_confirm_soft_reboot">Let KernelSU restart Android?</string>
-    <string name="recovery_confirm_reboot_unroot">Turn off Root on boot, delete everything in /data/adb (KernelSU\'s modules, its saved grants and its service) and in /data/local/tmp, then restart the phone?</string>
+    <string name="recovery_confirm_restart_zygote">Reboot Android?</string>
+    <string name="recovery_confirm_soft_reboot">Let KernelSU reboot Android?</string>
+    <string name="recovery_confirm_reboot_unroot">Turn off Root on boot, delete everything in /data/adb (KernelSU\'s modules, its saved grants and its service) and in /data/local/tmp, then reboot the phone?</string>
     <string name="recovery_confirm_reload_modules">Run KernelSU\'s module setup again?</string>
     <string name="recovery_action_reload_modules">Reload modules</string>
     <string name="recovery_reload_modules">Reload modules</string>
     <string name="recovery_reload_modules_summary">Run KernelSU\'s module setup again.</string>
     <string name="recovery_modules_reloaded">Module setup ran again.</string>
-    <string name="recovery_action_restart_zygote">Restart Android</string>
-    <string name="recovery_action_soft_reboot">Soft reboot</string>
+    <string name="recovery_action_restart_zygote">Reboot Android</string>
+    <string name="recovery_action_soft_reboot">Soft restart</string>
     <string name="recovery_action_reboot_unroot">Reboot and unroot</string>
-    <string name="recovery_restart_zygote">Restart Android</string>
-    <string name="recovery_restart_zygote_summary">Restarts Android so mounted modules can load their hooks.</string>
-    <string name="recovery_soft_reboot">Soft reboot</string>
-    <string name="recovery_soft_reboot_summary">Restarts Android through KernelSU, which is what makes mounted modules load.</string>
+    <string name="recovery_restart_zygote">Reboot Android</string>
+    <string name="recovery_restart_zygote_summary">Reboots Android so mounted modules can load their hooks.</string>
+    <string name="recovery_soft_reboot">Soft restart</string>
+    <string name="recovery_soft_reboot_summary">Reboots Android through KernelSU, which is what makes mounted modules load.</string>
     <string name="recovery_reboot_unroot">Reboot and unroot</string>
     <string name="recovery_reboot_unroot_summary">Turn off Root on boot, delete /data/adb and /data/local/tmp, then restart.</string>
-    <string name="recovery_root_required">KernelSU isn\'t loaded, so there is no root. Load KernelSU first, or run the install again.</string>
+    <string name="recovery_root_required">KernelSU is not loaded, so there is no root. Load KernelSU first, or run the install again.</string>
     <string name="reboot_sheet_title">Reboot the phone</string>
     <!-- The launcher's short label for the Reboot shortcut: what fits beside an icon, where the sheet's own
          title is what the long label and the sheet itself are for. -->
-    <string name="shortcut_restart_short">Restart</string>
+    <string name="shortcut_restart_short">Reboot</string>
     <!-- The soft Reboot shortcut's long label. Not a row's second line any more - the sheet's rows carry their
          names alone - but the launcher still has to explain the shortcut somewhere, and it has no row to read
          that from. -->
-    <string name="shortcut_soft_restart_long">Restarts Android userspace only.</string>
+    <string name="shortcut_soft_restart_long">Reboots Android userspace only.</string>
     <string name="reboot_status_checking">Checking what this device will allow…</string>
     <string name="reboot_status_root">Root is available</string>
     <string name="reboot_status_shizuku">Only a Shizuku shell is available. It can reboot the phone, but a soft reboot requires root.</string>
     <string name="reboot_status_none">Neither root nor Shizuku is available</string>
-    <string name="reboot_need_root">Root is required. Only the KernelSU daemon can Reboot userspace without a full reboot.</string>
+    <string name="reboot_need_root">Root is required. Only the KernelSU service can Reboot userspace without a full restart.</string>
     <string name="reboot_need_shell">There is no root or Shizuku shell.</string>
     <string name="reboot_refused">The phone would not take the request.</string>
     <string name="reboot_target_reboot">Reboot</string>
@@ -1020,27 +1020,27 @@
     <string name="reboot_target_download">Reboot to Download</string>
     <string name="reboot_target_edl">Reboot to EDL</string>
     <string name="reboot_confirm_title">Leave Android?</string>
-    <string name="reboot_confirm_body">The phone will Reboot into %1$s and won\'t return to this screen on its own.
+    <string name="reboot_confirm_body">The phone will Reboot into %1$s and will not return to this screen on its own.
 
 Hold Power and Volume Down together for 7 seconds to Reboot it from there.</string>
     <string name="recovery_shell_unavailable">KernelSU is running, but this app has no root access. Give Root My Galaxy Next root permission in KernelSU, or start Shizuku, then try again.</string>
-    <string name="recovery_shizuku_needs_root">Shizuku is running, but this action needs root, and Shizuku doesn\'t have it. Load KernelSU first, or run the install again.</string>
-    <string name="recovery_scheduled">Scheduled. Android will restart shortly.</string>
-    <string name="recovery_reboot_scheduled">Scheduled. The phone will restart without root.</string>
-    <string name="recovery_wipe_complete">Scheduled. Root on boot is off. %1$d files in /data/adb and %2$d files in /data/local/tmp were removed. The phone will restart without root.</string>
+    <string name="recovery_shizuku_needs_root">Shizuku is running, but this action needs root, and Shizuku does not have it. Load KernelSU first, or run the install again.</string>
+    <string name="recovery_scheduled">Scheduled. Android will reboot shortly.</string>
+    <string name="recovery_reboot_scheduled">Scheduled. The phone will reboot without root.</string>
+    <string name="recovery_wipe_complete">Scheduled. Root on boot is off. %1$d files in /data/adb and %2$d files in /data/local/tmp were removed. The phone will reboot without root.</string>
     <string name="recovery_wipe_incomplete">Scheduled. Root on boot is off. %1$d of %2$d files in /data/adb and %3$d of %4$d files in /data/local/tmp were removed. These could not be removed: %5$s.</string>
     <string name="recovery_wipe_more">and %1$d more</string>
     <string name="recovery_needs_kernel_su">Needs KernelSU</string>
-    <string name="framework_restart_title">Restart result</string>
+    <string name="framework_restart_title">Reboot result</string>
     <string name="framework_restart_came_back">Android restarted in about %1$d seconds and is running again.</string>
-    <string name="framework_restart_not_restarted">Android didn\'t restart. The old process is still running after %2$d seconds, so nothing was loaded again.</string>
-    <string name="framework_restart_framework_missing">Android began restarting, but nothing came back within %1$d seconds. Restart the phone before trying again.</string>
+    <string name="framework_restart_not_restarted">Android did not restart. The old process is still running after %2$d seconds, so nothing was loaded again.</string>
+    <string name="framework_restart_framework_missing">Android began restarting, but nothing came back within %1$d seconds. Reboot the phone before trying again.</string>
     <string name="framework_restart_boot_changed">The phone restarted while this was being checked, so there is nothing to report.</string>
-    <string name="framework_restart_unreadable">A restart was asked for, but the app couldn\'t confirm what happened.</string>
+    <string name="framework_restart_unreadable">A reboot was asked for, but the app could not confirm what happened.</string>
     <string name="framework_restart_module_code_mapped">Module code is loaded in the new Android runtime, so the modules that hook into it are loading.</string>
     <string name="framework_restart_module_code_absent">No module code is loaded in the new Android runtime, so it came back without the modules that hook into it.</string>
-    <string name="framework_restart_module_code_unreadable">The app couldn\'t tell whether module code is loaded in the new Android runtime.</string>
-    <string name="framework_restart_module_services_missing">These modules\' services aren\'t running: %1$s.</string>
+    <string name="framework_restart_module_code_unreadable">The app could not determine whether module code is loaded in the new Android runtime.</string>
+    <string name="framework_restart_module_services_missing">These modules\' services are not running: %1$s.</string>
     <string name="log_framework_restart_report">[+] Framework Reboot: %1$s</string>
     <string name="settings_shizuku_start">Start Shizuku now</string>
     <string name="settings_shizuku_start_summary">Start Shizuku with root, or through wireless debugging if there is no root.</string>
@@ -1064,14 +1064,14 @@ Hold Power and Volume Down together for 7 seconds to Reboot it from there.</stri
     <string name="settings_shizuku_boot_summary">Start Shizuku after every restart, using root, wireless debugging or the start code.</string>
     <string name="status_shizuku_starting">Starting…</string>
     <string name="status_shizuku_started">Shizuku is running</string>
-    <string name="error_shizuku_start_no_root">Shizuku can\'t be started here: this phone has no root, no wireless pairing and no start code.</string>
+    <string name="error_shizuku_start_no_root">Shizuku cannot be started here: this phone has no root, no wireless pairing and no start code.</string>
     <string name="error_no_root_shell">There is no root shell yet</string>
     <string name="settings_ksu_flavor">KernelSU build</string>
     <string name="settings_ksu_flavor_from_payload">Comes from the payload for this phone.</string>
     <string name="settings_dfr_stage">KernelSU service file</string>
     <string name="settings_dfr_stage_summary">The file KernelSU loads from after a restart. Every run uses it up and writes it again.</string>
     <string name="settings_dfr_stage_reading">Reading…</string>
-    <string name="settings_ksu_flavor_pending">Restart to apply · this boot loaded %1$s</string>
+    <string name="settings_ksu_flavor_pending">Reboot to apply · this boot loaded %1$s</string>
     <string name="settings_manager">Manager</string>
     <string name="settings_manager_summary">Install %1$s</string>
     <string name="settings_manager_summary_installed">Current version installed</string>
@@ -1116,42 +1116,42 @@ Hold Power and Volume Down together for 7 seconds to Reboot it from there.</stri
     <string name="settings_manager_registration_no_shell">No root shell, so nothing was registered</string>
     <string name="settings_manager_registration_refused">Refused: %1$s</string>
     <string name="settings_manager_registration_not_held">Accepted, but the kernel has a different key</string>
-    <string name="run_flavor_conflict">%1$s is already loaded in this boot, so %2$s can\'t be loaded. Reboot the phone, then run this payload.</string>
+    <string name="run_flavor_conflict">%1$s is already loaded in this boot, so %2$s cannot be loaded. Reboot the phone, then run this payload.</string>
     <string name="run_flavor_conflict_restart">Reboot now</string>
     <string name="run_flavor_conflict_dismiss">Not now</string>
-    <string name="run_kernel_version_match">[*] This build\'s kernel release (%1$s) isn\'t listed. The entry covers kernel version %2$s, which matches a regional variant of this firmware.</string>
+    <string name="run_kernel_version_match">[*] This build\'s kernel release (%1$s) is not listed. The entry covers kernel version %2$s, which matches a regional variant of this firmware.</string>
     <string name="run_flavor_label">KernelSU flavour: %1$s</string>
     <string name="settings_ksu_load">Install KernelSU</string>
     <string name="settings_ksu_load_summary">Installs KernelSU after root is obtained.</string>
-    <string name="settings_boot_root">Root on boot (Payload)</string>
-    <string name="settings_boot_root_summary">Run the install again after a restart if root isn\'t active.</string>
+    <string name="settings_boot_root">Auto Root via Payload</string>
+    <string name="settings_boot_root_summary">Run the install again after a reboot if root is not active.</string>
     <string name="settings_boot_root_needs_load">Root on boot needs Install KernelSU to be on.</string>
     <string name="settings_battery">Battery</string>
     <string name="settings_battery_summary_restricted">Android is limiting this app. Runs may be delayed, or lose internet, when the screen is off.</string>
     <string name="settings_battery_summary_allowed">Unrestricted. Runs can use the internet while the screen is off.</string>
     <string name="settings_battery_allow">Allow</string>
     <string name="settings_battery_allowed">Allowed</string>
-    <string name="shizuku_not_started_title">Shizuku didn\'t start</string>
-    <string name="shizuku_not_started">Android didn\'t allow it to start in the background. Open the app to start Shizuku.</string>
-    <string name="shizuku_not_running_title">Shizuku isn\'t running</string>
+    <string name="shizuku_not_started_title">Shizuku did not start</string>
+    <string name="shizuku_not_started">Android did not allow it to start in the background. Open the app to start Shizuku.</string>
+    <string name="shizuku_not_running_title">Shizuku is not running</string>
     <string name="shizuku_not_running_body">Start Shizuku with ADB or root, give this app permission, then turn this on.</string>
     <string name="action_download_shizuku">Download Shizuku</string>
-    <string name="error_shizuku_unavailable">Shizuku isn\'t running. Start it with ADB or root first.</string>
+    <string name="error_shizuku_unavailable">Shizuku is not running. Start it with ADB or root first.</string>
     <!--
         The question a run asks instead of failing when Use Shizuku is on and Shizuku is down. The
         second sentence is the honest half: the app's own process is not a shell, so a target that asks
-        for one still needs a shell to run without Shizuku, and a saved pairing is the only other one.
+        for one still needs a command shell to run without Shizuku, and a saved pairing is the only other one.
     -->
-    <string name="status_shizuku_hold">Shizuku isn\'t running</string>
-    <string name="shizuku_hold_body">This run will use Shizuku. Start Shizuku to continue, or continue without it. A payload that needs a shell also needs a saved wireless pairing.</string>
+    <string name="status_shizuku_hold">Shizuku is not running</string>
+    <string name="shizuku_hold_body">This run will use Shizuku. Start Shizuku to continue, or continue without it. A payload that needs a command shell also needs a saved wireless pairing.</string>
     <string name="action_run_without_shizuku">Run without Shizuku</string>
-    <string name="error_shizuku_permission">Shizuku permission wasn\'t granted</string>
+    <string name="error_shizuku_permission">Shizuku permission was not granted</string>
     <string name="error_shizuku_stage">Couldn\'t copy %1$s through Shizuku: %2$s</string>
     <string name="log_shizuku_prepare">[*] Preparing Shizuku execution</string>
     <string name="log_shizuku_permission">[+] Shizuku permission granted</string>
     <string name="repo_profile_missing">Support profile %1$s is no longer available</string>
     <string name="select_device_title">Choose a payload</string>
-    <string name="select_device_description">Choose a payload by device model and kernel version \u2014 or the chain that needs nothing installed first.</string>
+    <string name="select_device_description">Choose a payload by device model and kernel version : or the chain that needs nothing installed first.</string>
     <!--
       The sheet's two groups. The second one is named by the exploit and its CVE rather than "universal root",
       which claimed something about the phone: this chain still needs a payload, it just needs no helper, no
@@ -1159,10 +1159,10 @@ Hold Power and Volume Down together for 7 seconds to Reboot it from there.</stri
       holds the CVE here to the helper's DirtyFrag bridge.
     -->
     <!-- The two group titles are the flows' own names (RunKind.flowName); these are what follows them. -->
-    <string name="payload_group_universal_detail">Runs from this app alone, before anything is installed: it installs the manager itself, patches the kernel it writes through and starts its daemon. It still needs a payload, and the row says which.</string>
+    <string name="payload_group_universal_detail">Runs from this app alone, before anything is installed: it installs the manager itself, patches the kernel it writes through and starts its service. It still needs a payload, and the row says which.</string>
     <string name="payload_group_device">Payloads the enabled sources publish for a phone, by model and kernel release.</string>
-    <string name="universal_choice_device">Device payload \u2014 the module built for this phone\'s kernel</string>
-    <string name="universal_choice_generic">Generic payload \u2014 one daemon covering a whole kernel family</string>
+    <string name="universal_choice_device">Device payload</string>
+    <string name="universal_choice_generic">Generic payload</string>
     <!--
       What the chain's confirmation states about the choice, in the labelled-row shape the run plan uses: this
       run has no payload profile to name, so which KernelSU and which build of it are the whole of what the
@@ -1171,7 +1171,7 @@ Hold Power and Volume Down together for 7 seconds to Reboot it from there.</stri
     -->
     <string name="universal_confirm_kernelsu">KernelSU</string>
     <string name="universal_confirm_payload">Payload</string>
-    <string name="universal_confirm_body">This runs the %1$s exploit from this app alone \u2014 no helper, no temporary root and no Shizuku \u2014 then installs that KernelSU\'s manager, patches the kernel it writes through, loads its module and starts its daemon.</string>
+    <string name="universal_confirm_body">This runs the %1$s exploit from this app alone : no helper, no temporary root and no Shizuku : then installs that KernelSU\'s manager, patches the kernel it writes through, loads its module and starts its service.</string>
     <string name="universal_choice_stages">stages %1$s</string>
     <string name="universal_choice_no_entry">no %1$s entry for this phone in the enabled sources</string>
     <string name="kernel_match_exact">Exact kernel match</string>
@@ -1192,7 +1192,7 @@ Hold Power and Volume Down together for 7 seconds to Reboot it from there.</stri
     <string name="run_chip_checking">Checking</string>
     <string name="run_chip_waiting">Waiting</string>
     <string name="run_chip_download">Download</string>
-    <!-- The universal root's second step stages a daemon rather than fetching a payload: the same stage, a
+    <!-- The universal root's second step stages a service rather than fetching a payload: the same stage, a
          different thing happening, and the chip has one word for it. -->
     <string name="run_chip_daemon">Daemon</string>
     <string name="run_chip_exploit">Exploit</string>
@@ -1211,9 +1211,9 @@ Hold Power and Volume Down together for 7 seconds to Reboot it from there.</stri
     <string name="payload_no_device_rows">No device payload matches this phone and these filters.</string>
     <string name="no_matching_devices_flavor">No payload in the enabled sources loads %1$s.</string>
     <string name="target_flavor_any">All</string>
-    <string name="device_mismatch_title">Device doesn\'t match</string>
+    <string name="device_mismatch_title">Device does not match</string>
     <string name="device_mismatch_body">This phone is %1$s, but the selected payload is for %2$s. Running it may crash or damage the phone.</string>
-    <string name="kernel_version_mismatch_title">Kernel version doesn\'t match</string>
+    <string name="kernel_version_mismatch_title">Kernel version does not match</string>
     <string name="kernel_version_mismatch_body">This phone runs kernel %1$s, but the selected payload is for %2$s. It may not work.</string>
     <string name="updater_available_title">Update available</string>
     <string name="updater_available_body">Version %1$s is available</string>
