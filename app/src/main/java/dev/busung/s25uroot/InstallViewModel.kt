@@ -495,6 +495,10 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             startHistory()
             // After startHistory, which clears it for every run.
             mutableState.value = mutableState.value.copy(kind = RunKind.Universal)
+            // And written to the record at the same moment, rather than waiting for the first step: a run is
+            // followed from its record, so the record has to say which flow it is from its first line and not
+            // from its first phase change.
+            updateHistory { entry -> entry.copy(kind = RunKind.Universal) }
             // An unattended run is one nobody is watching, which the boot gate's is. It suppresses this run's
             // own notification, because the gate posts one for the run it started and two of them saying the
             // same thing is how the shade stops being read - and it is what the screen-off hold reads.
@@ -2445,7 +2449,11 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
         // Written down as it moves, not only in memory: the phase is what a bar is drawn from, and the bar
         // has to be drawable by a screen in the app's own process for a run that is happening in another
         // one. The entry is saved per log line already, so this adds no write of its own.
-        updateHistory { entry -> entry.copy(phase = phase) }
+        // The kind travels with the phase, deliberately. Both are facts about the same run, and a separate
+        // write for the kind was a write that could be forgotten - which is what happened: a universal run's
+        // record said `Payload`, so the history never marked it as one and a followed run was drawn with the
+        // other flow's steps. Every flow passes through here on its first step, so nothing can now miss it.
+        updateHistory { entry -> entry.copy(phase = phase, kind = mutableState.value.kind) }
         appendLog("[*] $message")
         // The one interval worth timing, and every flow passes through both of its ends here: the universal
         // root and the payload flow alike start working when the exploit starts, and they are rooted when the
