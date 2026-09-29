@@ -1161,6 +1161,15 @@ Hold Power and Volume Down together for 7 seconds to Reboot it from there.</stri
     <string name="payload_group_device">Device payloads</string>
     <string name="universal_choice_device">Device payload \u2014 the module built for this phone\'s kernel</string>
     <string name="universal_choice_generic">Generic payload \u2014 one daemon covering a whole kernel family</string>
+    <!--
+      What the chain's confirmation states about the choice, in the labelled-row shape the run plan uses: this
+      run has no payload profile to name, so which KernelSU and which build of it are the whole of what the
+      person is agreeing to. The tier's words are the ones the row that was tapped used, so the screen and the
+      confirmation cannot describe the same choice differently.
+    -->
+    <string name="universal_confirm_kernelsu">KernelSU</string>
+    <string name="universal_confirm_payload">Payload</string>
+    <string name="universal_confirm_body">This runs the %1$s exploit from this app alone \u2014 no helper, no temporary root and no Shizuku \u2014 then installs that KernelSU\'s manager, patches the kernel it writes through, loads its module and starts its daemon.</string>
     <string name="universal_choice_stages">stages %1$s</string>
     <string name="universal_choice_no_entry">no %1$s entry for this phone in the enabled sources</string>
     <string name="kernel_match_exact">Exact kernel match</string>

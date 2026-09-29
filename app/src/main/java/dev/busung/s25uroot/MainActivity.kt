@@ -857,7 +857,11 @@ private fun RootApp(
     LaunchedEffect(openedRunEntry) {
         if (openedRunEntry != null) selectedPage = AppPage.History
     }
-    var showInstallConfirmation by remember { mutableStateOf(false) }
+    // The choice the sheet's Next settled, waiting for the one confirmation both kinds of run get. A nullable
+    // choice rather than a flag plus the selection it refers to: that shape is a dialog that can be drawn about
+    // one run while starting another, and this one cannot be, because the subject and the trigger are the same
+    // value.
+    var confirming by remember { mutableStateOf<PayloadChoice?>(null) }
     var showTargetPicker by remember { mutableStateOf(false) }
     var showRebootSheet by remember { mutableStateOf(false) }
     // The app's one undo surface. Held here rather than per page, so a deletion on History and a deletion in
@@ -1173,7 +1177,7 @@ private fun RootApp(
                             !profile.matchesKernelVersion(device) -> CompatibilityWarning.KernelVersion
                             else -> null
                         }
-                        if (compatibilityWarning == null) showInstallConfirmation = true
+                        if (compatibilityWarning == null) confirming = choice
                     }
                     is PayloadChoice.Universal -> {
                         // Nothing is written here, and that is the one thing this branch does have to
@@ -1183,7 +1187,10 @@ private fun RootApp(
                         // a second writer, and it would be writing the one that was *asked* for.
                         selectedProfile = null
                         compatibilityWarning = null
-                        openUniversalRun(choice.flavor, choice.tier)
+                        // The same confirmation a payload run gets, and it is not a formality here either:
+                        // this is the last screen before the kernel is patched, and the two facts it states -
+                        // which KernelSU and which build of it - are the two the row was picked by.
+                        confirming = choice
                     }
                 }
             },
@@ -1241,7 +1248,7 @@ private fun RootApp(
                                 CompatibilityWarning.KernelVersion -> null
                             }
                             if (compatibilityWarning == null) {
-                                showInstallConfirmation = true
+                                confirming = PayloadChoice.Device(profile)
                             }
                         },
                         AppAction(R.string.action_back) {
@@ -1275,9 +1282,19 @@ private fun RootApp(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    if (showInstallConfirmation) {
+    // One confirmation for both kinds of run, because it is one question - start now? - asked at the same
+    // point in both flows: after the choice, and before the run's first step. What differs is what there is to
+    // say about the choice, and that is the body: a payload run's subject is the profile, which the sheet and
+    // the compatibility warning have already named, while this chain has no profile at all - so its two facts
+    // are stated here, in the row shape the run plan uses for the same kind of fact.
+    //
+    // The `when` over [PayloadChoice] is exhaustive, which is the point: a third kind of row would fail to
+    // compile here and in the sheet's own dispatch, so a new way to root a phone cannot be added and quietly
+    // start without being confirmed.
+    confirming?.let { pending ->
+        val universal = pending as? PayloadChoice.Universal
         AlertDialog(
-            onDismissRequest = { showInstallConfirmation = false },
+            onDismissRequest = { confirming = null },
             icon = { Icon(Icons.Rounded.Security, contentDescription = null) },
             title = {
                 DialogDimAmount(0.34f)
@@ -1285,12 +1302,41 @@ private fun RootApp(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    // Nothing is said about the manager, in either state. The run installs the
-                    // flavour's manager itself when the phone has none, so this dialog could only state
-                    // that fact twice: once as an offer, which is the run's step and not the dialog's,
-                    // and once as a reading, which the home card already carries for the payload the
-                    // person just picked.
-                    Text(stringResource(R.string.install_confirm_body))
+                    Text(
+                        when (pending) {
+                            is PayloadChoice.Device -> stringResource(R.string.install_confirm_body)
+                            is PayloadChoice.Universal -> stringResource(
+                                R.string.universal_confirm_body,
+                                UniversalRootRun.EXPLOIT_NAME,
+                            )
+                        },
+                    )
+                    // Nothing is said about the manager for a payload run, which is the sentence that used to
+                    // be the whole of this body. The run installs the flavour's manager itself when the phone
+                    // has none, so that dialog could only state it twice: once as an offer, which is the run's
+                    // step and not the dialog's, and once as a reading, which the home card already carries
+                    // for the payload the person just picked.
+                    //
+                    // The chain's run is the one case where which manager gets installed is not already
+                    // somewhere on the screen the confirmation was opened from, because its rows are a
+                    // flavour and a tier rather than a profile: the flavour is the manager, and the tier is
+                    // the module that kernel has to accept.
+                    if (universal != null) {
+                        RunPlanRow(
+                            label = stringResource(R.string.universal_confirm_kernelsu),
+                            value = universal.flavor.label,
+                            first = true,
+                        )
+                        RunPlanRow(
+                            label = stringResource(R.string.universal_confirm_payload),
+                            value = stringResource(
+                                when (universal.tier) {
+                                    PayloadTier.Device -> R.string.universal_choice_device
+                                    PayloadTier.Generic -> R.string.universal_choice_generic
+                                },
+                            ),
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -1301,13 +1347,19 @@ private fun RootApp(
                     listOf(
                         AppAction(R.string.action_confirm, AppActionRole.Priority) {
                             clickHaptic(view)
-                            showInstallConfirmation = false
-                            openInstaller(selectedProfile?.selectionId)
-                            selectedProfile = null
+                            confirming = null
+                            when (pending) {
+                                is PayloadChoice.Device -> {
+                                    openInstaller(pending.profile.selectionId)
+                                    selectedProfile = null
+                                }
+                                is PayloadChoice.Universal ->
+                                    openUniversalRun(pending.flavor, pending.tier)
+                            }
                         },
                         AppAction(R.string.action_cancel) {
                             clickHaptic(view)
-                            showInstallConfirmation = false
+                            confirming = null
                         },
                     ),
                 )
