@@ -504,8 +504,10 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             // same thing is how the shade stops being read - and it is what the screen-off hold reads.
             runIsUnattended = unattended
             // Said out loud, because the four steps look like a payload run's four steps and a person has no
-            // other way to tell which one they are watching.
-            appendLog("[*] Universal root: no helper, no Shizuku, no temporary root")
+            // other way to tell which one they are watching. The flow's own name, so the first line of the log
+            // and the line this run writes into its record are the same words - which is the whole point of
+            // the name being on the flow rather than written out here.
+            appendLog("[*] ${RunKind.Universal.flowName}: no helper, no Shizuku, no temporary root")
 
             // 1. Support check - what this phone is, and whether this boot can be rooted at all.
             setPhase(InstallPhase.Checking, app.getString(R.string.universal_step_check))
@@ -524,7 +526,10 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             // The exploit's first act arms a marker only a reboot clears, so a second run through an armed
             // kernel is either a no-op or a second load into a kernel that already has the module.
             if (UniversalRootRun.alreadyArmed()) {
-                failUniversal(UniversalStage.Support, app.getString(R.string.universal_already_armed))
+                failUniversal(
+                    UniversalStage.Support,
+                    app.getString(R.string.universal_already_armed, RunKind.Universal.flowName),
+                )
                 return@launch
             }
 
@@ -714,6 +719,9 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 message = mutableState.value.message,
                 verdict = runVerdict(mutableState.value.phase, busy = false),
                 runId = activeRunId,
+                // The flow this notification is about, because the outcome wears it too: the shade keeps a
+                // failed run, and which flow failed is the first thing a person needs from it.
+                kind = RunKind.Universal,
             )
         }
     }
@@ -1491,6 +1499,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                                 ?: mutableState.value.message,
                             verdict = outcome,
                             runId = activeRunId,
+                            kind = mutableState.value.kind,
                         )
                     }
                 }

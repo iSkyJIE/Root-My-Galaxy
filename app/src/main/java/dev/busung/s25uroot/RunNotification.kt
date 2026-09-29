@@ -81,6 +81,7 @@ internal object RunNotification {
                     verdict = RunVerdict.Running,
                     withActions = true,
                     runId = runId,
+                    kind = kind,
                     stage = Stage(progress, phase, kind),
                 ).build(),
             )
@@ -98,12 +99,24 @@ internal object RunNotification {
      * the card on Home is the account of that, and a notification saying "done" about the thing you just did
      * is noise.
      */
-    fun finish(context: Context, message: String, verdict: RunVerdict, runId: String?) {
+    fun finish(
+        context: Context,
+        message: String,
+        verdict: RunVerdict,
+        runId: String?,
+        /**
+         * Which flow the run was, and not an optional detail: the shade keeps an outcome, and an outcome of a
+         * run nobody watched is where "which root was this?" is the first question. It is a parameter rather
+         * than a default for that reason - a default would quietly label every unfinished run as the payload
+         * flow, which is the one thing the two names exist to tell apart.
+         */
+        kind: RunKind,
+    ) {
         ensureChannel(context)
         runCatching {
             NotificationManagerCompat.from(context).notify(
                 NOTIFICATION_ID,
-                builder(context, message, verdict, withActions = false, runId = runId).apply {
+                builder(context, message, verdict, withActions = false, runId = runId, kind = kind).apply {
                     setOngoing(false)
                     setAutoCancel(true)
                 }.build(),
@@ -119,12 +132,19 @@ internal object RunNotification {
      * Used by the two actions: the run is at some stage, and what a person needs after tapping is that the tap
      * was taken. The next phase posts the bar again, so the bar being absent for a moment says nothing wrong.
      */
-    fun note(context: Context, message: String, runId: String?) {
+    fun note(context: Context, message: String, runId: String?, kind: RunKind) {
         ensureChannel(context)
         runCatching {
             NotificationManagerCompat.from(context).notify(
                 NOTIFICATION_ID,
-                builder(context, message, RunVerdict.Running, withActions = true, runId = runId).build(),
+                builder(
+                    context,
+                    message,
+                    RunVerdict.Running,
+                    withActions = true,
+                    runId = runId,
+                    kind = kind,
+                ).build(),
             )
         }.onFailure { error ->
             warnOnce(context, "the run notification could not be updated", error)
@@ -171,6 +191,7 @@ internal object RunNotification {
         verdict: RunVerdict,
         withActions: Boolean,
         runId: String?,
+        kind: RunKind,
         stage: Stage? = null,
     ) = NotificationCompat
         .Builder(context, CHANNEL_ID)
@@ -179,6 +200,11 @@ internal object RunNotification {
         .setColor(VerdictTint.of(verdict))
         .setSmallIcon(verdictSmallIcon(verdict))
         .setContentTitle(context.getString(verdict.label))
+        // Which root this is, over the stage it has reached. The title is the verdict and the text is the step,
+        // and neither of them can say which flow without being read as something else - "Exploiting" is both
+        // flows' second step. The subtext is the one line of a notification that is a label rather than a
+        // sentence, so it is where a name belongs.
+        .setSubText(kind.flowName)
         .setContentText(message)
         .setStyle(NotificationCompat.BigTextStyle().bigText(message))
         // One destination for both lives, because [InstallActivity] is the thing that knows whether this

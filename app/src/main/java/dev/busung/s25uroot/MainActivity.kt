@@ -3685,13 +3685,19 @@ private fun HistoryEntryCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = contentColor.copy(alpha = 0.78f),
                 )
-                // Which flow the run was - and only the one that has to be said out loud. Every run recorded
-                // before the field existed is a payload run, so a payload row marked as one would be telling
-                // the reader what they already assumed, and the rest of this app describes that flow by
-                // default. A universal run is the exception, and until now it was indistinguishable here.
-                if (entry.kind == RunKind.Universal) {
+                // Which exploit the run spent its time on: drawn on every row whose record says, rather than
+                // only on the flow that used to be the exception. The old rule was that a payload run needed no
+                // mark because it is what this app does by default - which stopped being true once the name was
+                // the exploit, since two runs of one phone, one through the helper and one from this app alone,
+                // are otherwise the same row.
+                //
+                // A record that does not say gets no name, and this is the one case where saying nothing is the
+                // honest answer: those are the entries written before the flow joined the record, and one of the
+                // runs among them is a DirtyFrag run - so naming the payload flow over it would be a fact this
+                // app invented about a run that happened.
+                entry.kind?.let { flow ->
                     Text(
-                        stringResource(R.string.history_kind_universal),
+                        flow.flowName,
                         style = MaterialTheme.typography.bodyMedium,
                         color = contentColor.copy(alpha = 0.78f),
                     )
@@ -3858,13 +3864,15 @@ private fun HistoryResultCard(entry: InstallHistoryEntry) {
                     )
                 }
                 // How the run got what it needed, which is a different fact on each flow: a payload run went
-                // through Shizuku or through the helper, and the universal root used neither. It is said with
-                // the flow, because "Shizuku: not used" about a run that has no helper either reads as a
-                // payload run that chose the helper - the one thing this run was not.
+                // through Shizuku or through the helper, and the chain that needs no helper used neither. It is
+                // said with the flow, because "Shizuku: not used" about a run that has no helper either reads
+                // as a payload run that chose the helper - the one thing this run was not.
                 Text(
                     text = when {
-                        entry.kind == RunKind.Universal ->
-                            stringResource(R.string.history_kind_universal_detail)
+                        entry.kind == RunKind.Universal -> stringResource(
+                            R.string.history_kind_universal_detail,
+                            RunKind.Universal.flowName,
+                        )
                         entry.usedShizuku -> stringResource(R.string.history_shizuku_used)
                         else -> stringResource(R.string.history_shizuku_not_used)
                     },
@@ -7156,7 +7164,13 @@ private fun TargetSelectionSheet(
                     }
                     else -> {
                         item(key = SHEET_DEVICE_GROUP_KEY) {
-                            PayloadGroupHeader(title = stringResource(R.string.payload_group_device))
+                            PayloadGroupHeader(
+                                // The flow's own name, which is the same name the run this row starts writes
+                                // into its record - the sheet and the history agree because there is one name
+                                // rather than two that have to be kept in step by hand.
+                                title = RunKind.Payload.flowName,
+                                detail = stringResource(R.string.payload_group_device),
+                            )
                         }
                         items(rows.device, key = { it.key }) { choice ->
                             DevicePayloadRow(
@@ -7180,14 +7194,11 @@ private fun TargetSelectionSheet(
                     item(key = SHEET_UNIVERSAL_GROUP_KEY) {
                         PayloadGroupHeader(
                             // The exploit and its CVE, not "universal root" - that name claimed something
-                            // about the phone. This chain needs a payload like every other row here; what
-                            // it does not need is a helper, a temporary root or Shizuku, and the row under
-                            // this says which payload it takes.
-                            title = stringResource(
-                                R.string.payload_group_universal,
-                                UniversalRootRun.EXPLOIT_NAME,
-                                UniversalRootRun.CVE,
-                            ),
+                            // about the phone, and this chain needs a payload like every other row here; what
+                            // it does not need is a helper, a temporary root or Shizuku. The name comes off
+                            // the flow, so the header here, the record this run writes and the shade it posts
+                            // are one string rather than three copies of it.
+                            title = RunKind.Universal.flowName,
                             detail = stringResource(R.string.payload_group_universal_detail),
                         )
                     }

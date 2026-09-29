@@ -634,7 +634,12 @@ class AutoRootService : Service() {
             AutoRootSupport.markVerifiedForBoot(this, bootToken)
             // The offer a payload install's boot run also makes, and for the same reason: KernelSU is loaded
             // and its modules are not, because this happened in a userspace that was already built.
-            finish(getString(R.string.autoroot_universal_succeeded), offerSoftReboot = true)
+            // The flow's own name, because this notification is the whole of what anyone sees of a boot run:
+            // "Root succeeded" is true of three different roots on this phone.
+            finish(
+                getString(R.string.autoroot_universal_succeeded, RunKind.Universal.flowName),
+                offerSoftReboot = true,
+            )
             return
         }
         finish(
@@ -700,10 +705,11 @@ class AutoRootService : Service() {
             // what anyone sees of a boot install: with Use Shizuku on, a rooted phone and a message that
             // reads as if nothing was different is the setting being ignored without saying so.
             finish(
-                getString(
-                    if (withoutShell) R.string.autoroot_succeeded_without_shell
-                    else R.string.autoroot_succeeded,
-                ),
+                if (withoutShell) {
+                    getString(R.string.autoroot_succeeded_without_shell)
+                } else {
+                    getString(R.string.autoroot_succeeded, RunKind.Payload.flowName)
+                },
                 offerSoftReboot = true,
             )
             return

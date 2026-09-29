@@ -34,6 +34,7 @@ class RunActionReceiver : BroadcastReceiver() {
                     context = context,
                     message = context.getString(R.string.run_notification_stopping),
                     runId = activeRunId(context),
+                    kind = activeRunKind(context),
                 )
             }
             ACTION_COPY_LOG -> {
@@ -47,6 +48,7 @@ class RunActionReceiver : BroadcastReceiver() {
                     context = context,
                     message = context.getString(R.string.run_notification_log_copied),
                     runId = activeRunId(context),
+                    kind = activeRunKind(context),
                 )
             }
         }
@@ -74,6 +76,24 @@ class RunActionReceiver : BroadcastReceiver() {
          * destination it already had.
          */
         internal fun activeRunId(context: Context): String? = RunInFlight.holder(context)?.entryId
+
+        /**
+         * Which flow the run this notification is about is, read from the record the note is written over.
+         *
+         * The note's own text is about a tap, and the subtext it replaces is the flow's name - so a note that
+         * guessed would relabel a running DirtyFrag run as the payload flow for as long as "Stopping…" is on
+         * screen. The record is read rather than remembered for the same reason the log is: this receiver is in
+         * another process from the run, and the entry is the only thing both can see.
+         *
+         * [RunKind.Payload] when there is no entry to read, which is a notification that outlived its run - and
+         * the note is then about a run that has already ended, so the label under it matters less than the tap
+         * being acknowledged.
+         */
+        internal fun activeRunKind(context: Context): RunKind {
+            val id = activeRunId(context) ?: return RunKind.Payload
+            val entry = runCatching { InstallHistoryStore(context).entry(id) }.getOrNull()
+            return entry?.kind ?: RunKind.Payload
+        }
 
         /**
          * The process a stop should be written for, from the record that says where the run is.

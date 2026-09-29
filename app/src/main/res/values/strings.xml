@@ -210,10 +210,10 @@
     <string name="autoroot_failed_at">Install failed at %1$s: %2$s</string>
     <string name="autoroot_not_started_title">Root on boot didn\'t start</string>
     <string name="autoroot_not_started">Android didn\'t let the install run in the background after the restart. Open the app to install now.</string>
-    <string name="autoroot_succeeded">Root succeeded</string>
+    <string name="autoroot_succeeded">%1$s root succeeded</string>
     <!-- A boot notification has to say which flow ran, because the two are started by two different things and
          only one of them was asked for by this boot. -->
-    <string name="autoroot_universal_succeeded">Universal root succeeded</string>
+    <string name="autoroot_universal_succeeded">%1$s root succeeded</string>
     <string name="autoroot_succeeded_without_shell">Root obtained. Shizuku wasn\'t running, but this payload doesn\'t need a shell.</string>
     <string name="autoroot_boot_changed">The phone restarted before the install started</string>
     <string name="autoroot_timed_out">The operation took too long</string>
@@ -237,7 +237,7 @@
     <string name="universal_installed">Rooted \u2014 KernelSU is live in this boot.</string>
     <string name="universal_no_device">This device could not be read, so nothing was attempted.</string>
     <string name="universal_wrong_abi">This exploit is arm64 only, and this phone reports %1$s.</string>
-    <string name="universal_already_armed">This boot is already hooked. Reboot before running the universal root again \u2014 the exploit arms a marker only a reboot clears.</string>
+    <string name="universal_already_armed">This boot is already hooked. Reboot before running %1$s again \u2014 the exploit arms a marker only a reboot clears.</string>
     <string name="universal_daemon_failed">The payload\'s daemon could not be downloaded or staged, so nothing was attempted.</string>
     <string name="universal_not_live">Nothing on this phone confirms root: no /system/bin/su, and an app cannot read the kernel. The chain finished, but this boot is not rooted.</string>
     <string name="dfr_dmc_fix">Keep Odin reachable</string>
@@ -394,10 +394,12 @@
     <string name="history_shizuku_not_used">Shizuku: not used</string>
     <!-- The flow a stored run was, said only for the one that has to be told: every run recorded before the
          field existed is a payload run, so marking those would tell the reader nothing they had not assumed. -->
-    <string name="history_kind_universal">Universal root</string>
+    <!-- The flow's name itself is on RunKind.flowName, not here: it is the exploit and its CVE, which no
+         language translates, and three surfaces show it - so a copy per locale would be three ways to spell
+         one name. This line is what the name is followed by. -->
     <!-- The detail card's version, in the place the transport line sits: a payload run says how it got its
          privileges (Shizuku or the helper), and this flow's answer is that it used neither. -->
-    <string name="history_kind_universal_detail">Universal root \u2014 no helper, no Shizuku</string>
+    <string name="history_kind_universal_detail">%1$s \u2014 no helper, no Shizuku</string>
     <string name="export_log">Export log</string>
     <string name="export_log_saved">Log saved</string>
     <string name="export_log_failed">Couldn\'t save log</string>
@@ -1156,9 +1158,9 @@ Hold Power and Volume Down together for 7 seconds to Reboot it from there.</stri
       temporary root and no Shizuku. Both names come from the app's own statement of the technique, and a test
       holds the CVE here to the helper's DirtyFrag bridge.
     -->
-    <string name="payload_group_universal">%1$s (%2$s)</string>
+    <!-- The two group titles are the flows' own names (RunKind.flowName); these are what follows them. -->
     <string name="payload_group_universal_detail">Runs from this app alone, before anything is installed: it installs the manager itself, patches the kernel it writes through and starts its daemon. It still needs a payload, and the row says which.</string>
-    <string name="payload_group_device">Device payloads</string>
+    <string name="payload_group_device">Payloads the enabled sources publish for a phone, by model and kernel release.</string>
     <string name="universal_choice_device">Device payload \u2014 the module built for this phone\'s kernel</string>
     <string name="universal_choice_generic">Generic payload \u2014 one daemon covering a whole kernel family</string>
     <!--

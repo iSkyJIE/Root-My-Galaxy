@@ -30,6 +30,30 @@ enum class RunKind {
     Universal,
     ;
 
+    /**
+     * What this flow is called wherever one has to be named.
+     *
+     * The exploit and its CVE, not a description of the flow. "Universal root" was the description, and it
+     * claimed something about the phone that is not true: this chain needs a payload like every other run here
+     * - what it does not need is a helper. The CVE says what the run actually spent its time on, in words no
+     * language has to translate and no one has to invent, and it cannot drift the way a second name for the same
+     * thing does.
+     *
+     * Kept on the flow, rather than in a string resource per surface, because three surfaces now show it and
+     * they have to agree: the history row a run writes, the subtext of its notification, and the group it was
+     * picked from in the sheet. It is deliberately not localized - a CVE number and an exploit's name are the
+     * same in every language, which is most of why they are the names.
+     *
+     * The helper flow is *not* named here and keeps its own words ("System UID install"), even though it roots
+     * through the same DirtyFrag bug: it is not a [RunKind] - it is a stage inside a payload run - and a name
+     * that said "DirtyFrag" about both would leave two very different flows sharing one label.
+     */
+    val flowName: String
+        get() = when (this) {
+            Payload -> KernelVulnerability.CVE
+            Universal -> "${UniversalRootRun.EXPLOIT_NAME} (${UniversalRootRun.CVE})"
+        }
+
     companion object {
         /**
          * The kind a name is, defaulting to [Payload].

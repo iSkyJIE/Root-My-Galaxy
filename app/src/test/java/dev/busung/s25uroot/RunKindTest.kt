@@ -3,6 +3,7 @@ package dev.busung.s25uroot
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -93,11 +94,20 @@ class RunKindTest {
                 "payload flow's steps over it",
             history.contains("val kind: RunKind"),
         )
-        assertTrue("the record's codec does not write the flow", history.contains("""put("kind", entry.kind.name)"""))
+        assertTrue(
+            "the record's codec does not write the flow",
+            history.contains("""put("kind", entry.kind?.name)"""),
+        )
         assertTrue("the record's codec does not read the flow", history.contains("RunKind.fromName("))
+        // Absence stays absence rather than becoming a payload run, which is what makes a row able to say
+        // nothing about an old record - see the reading of an absent `kind` in InstallHistory.decode.
+        assertTrue(
+            "the codec can no longer tell a record that does not say from one that says Payload",
+            history.contains("value.optionalString(\"kind\")?.let"),
+        )
         assertTrue(
             "a followed run does not take its flow from the record",
-            source("FollowedRun.kt").contains("kind = entry.kind"),
+            source("FollowedRun.kt").contains("entry.kind ?: RunKind.Payload"),
         )
     }
 
@@ -116,22 +126,48 @@ class RunKindTest {
     }
 
     @Test
-    fun `a stored universal run says so, in the list and in its detail`() {
+    fun `each flow is named by the exploit it runs`() {
+        // The names as values rather than as words in the UI, because three surfaces read them: the history row
+        // a run writes, the subtext of its notification, and the group it was picked from in the sheet. One
+        // value per flow is what makes those three agree, and it is what this test can hold without reading a
+        // layout.
+        assertEquals("CVE-2026-43499", RunKind.Payload.flowName)
+        assertEquals("DirtyFrag (CVE-2026-43284)", RunKind.Universal.flowName)
+
+        // Distinct, which is the point of naming them at all: the two flows' runs look identical on the next
+        // screen - four steps, one bar - and "which one was this" is the question the record has to answer.
+        assertNotEquals(
+            "the two flows share a name, so a record cannot say which root it was",
+            RunKind.Payload.flowName,
+            RunKind.Universal.flowName,
+        )
+
+        // And each name carries the number this repository states, rather than a copy of it: the payload's from
+        // the file that documents its bug ([KernelVulnerability]), the DirtyFrag one from the constant the
+        // helper's own bridge is held to by UniversalRootContractTest.
+        assertTrue(RunKind.Payload.flowName.contains(KernelVulnerability.CVE))
+        assertTrue(RunKind.Universal.flowName.contains(UniversalRootRun.CVE))
+        assertTrue(RunKind.Universal.flowName.contains(UniversalRootRun.EXPLOIT_NAME))
+    }
+
+    @Test
+    fun `every stored run is named by its flow, in the list and in its detail`() {
         val main = source("MainActivity.kt")
 
-        // The list row: marked, and only under a guard on the flow. A mark drawn unconditionally would label
-        // every payload run as a universal one, which is worse than not marking anything.
-        val firstGuard = main.indexOf("entry.kind == RunKind.Universal")
-        val rowMark = main.indexOf("R.string.history_kind_universal")
-        assertTrue("a stored run no longer says which flow it was", rowMark > 0)
+        // The list row: named for every entry, with no guard left to drop one of them. The rule was the
+        // opposite when the mark was "universal" - only the exceptional flow was marked, because a payload run
+        // is what this app does by default - and that stopped being true when the name became the exploit: two
+        // runs of one phone, one through the helper and one from this app alone, are the same row otherwise.
+        val row = main.substringAfter("private fun HistoryEntryCard(")
+            .substringBefore("private fun HistoryDetail(")
         assertTrue(
-            "the flow mark is not behind a guard, so it is drawn over runs that are not universal",
-            firstGuard in 0 until rowMark,
+            "the history row no longer names the flow of the run it draws",
+            row.contains("entry.kind?.let { flow ->") && row.contains("flow.flowName"),
         )
 
         // The detail card: the line that says how the run got what it needed. Both flows have one and they are
-        // not the same sentence - a payload run went through Shizuku or the helper, and the universal root
-        // used neither - so a run of one flow must not be described with the other's, which is what the
+        // not the same sentence - a payload run went through Shizuku or the helper, and the chain that needs no
+        // helper used neither - so a run of one flow must not be described with the other's, which is what the
         // unconditional "Shizuku: not used" did for a universal run.
         val detail = main.substringAfter("private fun HistoryResultCard(")
         assertTrue(
