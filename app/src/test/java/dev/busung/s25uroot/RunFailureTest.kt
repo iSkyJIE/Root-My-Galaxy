@@ -1,6 +1,7 @@
 package dev.busung.s25uroot
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -57,7 +58,17 @@ class RunFailureTest {
     fun `an ordinary exit code is not dressed up as a signal`() {
         assertNull(exitCodeSummary(1))
         assertNull(exitCodeSummary(0))
-        assertNull(exitCodeSummary(255))
+    }
+
+    @Test
+    fun `255 is explained, and still never as a signal`() {
+        // It stood in this test as an "ordinary" code until it turned out not to be one, and that assumption
+        // was the whole reason a common failure read as a mystery: 255 is what a refused or absent privileged
+        // spawn returns, so it belongs to the class "the command never ran". What must not change is that it is
+        // never dressed up as a signal - 255 - 128 is 127, which is not a Linux signal.
+        val detail = exitCodeSummary(255)
+        assertTrue("255 is unexplained again: $detail", detail != null)
+        assertFalse("255 is being called a signal: $detail", detail!!.contains("signal"))
     }
 
     @Test

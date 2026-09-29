@@ -201,7 +201,25 @@ private val SIGNAL_NAMES = mapOf(
  * Saying `137` tells nobody anything; saying that the payload was killed by signal 9 is the single
  * most useful thing a run can report about a payload that died without choosing to.
  */
+/**
+ * The codes that mean a command did not *run*, rather than running and failing.
+ *
+ * These are the shell's own, and they are a different class from a program's: `1` is a program that ran and
+ * said no, while these are the ways it never started. `255` is the one that matters in practice - it is what a
+ * refused or absent privileged spawn returns - and until now it was the only common failure the summary could
+ * not explain, so it read as a mystery instead of as "nothing was executed". 126 and 127 come along because
+ * they are the same class and were in the same blind spot.
+ */
+private val SHELL_EXIT = mapOf(
+    126 to "the command was found but could not be executed",
+    127 to "the command was not found",
+    255 to "the command could not be run: a refused or unavailable privilege, or nothing to execute",
+)
+
 internal fun exitCodeSummary(exitCode: Int): String? {
+    // Asked before the signal range, because these codes can never be signals and the range check below is the
+    // wrong question for them.
+    SHELL_EXIT[exitCode]?.let { return it }
     val signal = exitCode - 128
     if (exitCode !in 129..192 || signal <= 0) return null
     val name = SIGNAL_NAMES[signal]
