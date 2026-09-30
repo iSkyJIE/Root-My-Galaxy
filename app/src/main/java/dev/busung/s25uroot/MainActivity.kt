@@ -337,7 +337,7 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("BatteryLife")
     private fun requestBatteryExemption() {
         if (isBatteryUnrestricted()) {
-            // Nothing left to ask for — the system dialog would no-op — so show where it can be
+            // Nothing left to ask for the system dialog would no-op so show where it can be
             // undone instead of leaving the card unresponsive.
             runCatching {
                 startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
@@ -7246,7 +7246,7 @@ private fun TargetSelectionSheet(
 }
 
 /**
- * Keys for the list's own items — the two group labels and the one state that stands in for the device rows.
+ * Keys for the list's own items the two group labels and the one state that stands in for the device rows.
  *
  * The three states share a key because only one of them is ever composed: they are the branches of one
  * `when`, and a list can no more hold two of them than it can hold two device groups.
@@ -7389,15 +7389,15 @@ private fun DevicePayloadRow(
 }
 
 /**
- * One universal row: which KernelSU, which payload, and — for the device tier — what it would stage.
+ * One universal row: which KernelSU, which payload, and for the device tier what it would stage.
  *
  * The group header above already said the rest, so the row leads with the flavour: three rows a person picks
  * between by which KernelSU they want, and a row that repeated the exploit's name three times would be noise
  * in the one place the difference between the rows matters.
  *
  * [entry] and [catalogRead] are one answer between them, and the pairing is deliberate. The device tier either
- * resolves to an entry — which is shown, because a row that promised a payload the run would not use would be
- * worse than one that promised nothing — or to nothing, and "nothing" is only a fact about this phone when
+ * resolves to an entry which is shown, because a row that promised a payload the run would not use would be
+ * worse than one that promised nothing or to nothing, and "nothing" is only a fact about this phone when
  * the sources were read. Before that read, or after one that failed, the row says nothing about it at all: the
  * absent entry is then the app's own missing data, and naming it as the phone's would be the app blaming the
  * device for a network it never made.

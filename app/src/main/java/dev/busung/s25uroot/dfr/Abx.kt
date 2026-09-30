@@ -18,7 +18,7 @@ import javax.xml.parsers.DocumentBuilderFactory
  *
  * packages.xml is stored as ABX (magic `ABX\0`), so JAXP cannot read it.
  * We call the framework's own format-detecting entry point —
- * `android.util.Xml.resolvePullParser(InputStream)` — via reflection.
+ * `android.util.Xml.resolvePullParser(InputStream)` via reflection.
  * That method is `@hide` (absent from android.jar, hence reflection), but it
  * is only ever invoked under app_process-as-root (InjectMain), i.e. a
  * standalone dalvikvm process outside zygote's hidden-API enforcement.
@@ -140,7 +140,7 @@ object Abx {
      * Abort if any PMS-canonical int attribute anywhere in [doc] is not a
      * plain decimal integer. Such values would surface from INT_HEX/LONG_HEX
      * wire types whose hex string form PMS's decimal parseInt would reject on
-     * re-read — writing them back as text would silently corrupt the file.
+     * re-read writing them back as text would silently corrupt the file.
      */
     fun guardDecimalAttrs(doc: Document) {
         val all = doc.getElementsByTagName("*")

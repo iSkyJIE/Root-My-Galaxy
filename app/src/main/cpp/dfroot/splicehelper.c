@@ -12,8 +12,8 @@
 // argv[0] = program name
 // argv[1] = file offset (decimal string)
 // argv[2] = file path
-// argv[3] = optional "r" — read mode: write 16 bytes of file content to fd 0 (OUT_FD)
-//           if absent — splice mode: splice 16 bytes of file page into fd 1 (PIPE_FD)
+// argv[3] = optional "r" read mode: write 16 bytes of file content to fd 0 (OUT_FD)
+//           if absent splice mode: splice 16 bytes of file page into fd 1 (PIPE_FD)
 
 #define OUT_FD  0
 #define PIPE_FD 1

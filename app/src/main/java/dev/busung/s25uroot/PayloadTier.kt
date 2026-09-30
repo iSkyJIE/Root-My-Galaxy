@@ -8,7 +8,7 @@ package dev.busung.s25uroot
  *
  * - [Device] is the feed's entry for this exact phone. Its kernel module was built for the kernel release
  *   this phone runs and the artifact is the one that device was tested with, so it is the strongest pairing
- *   the repository can publish — and it only exists for phones somebody has ported.
+ *   the repository can publish and it only exists for phones somebody has ported.
  * - [Generic] is the KMI-generic daemon for the same flavour: one artifact carrying a module per KMI, which
  *   covers every phone whose kernel belongs to that family. It exists for phones with no entry of their own,
  *   and it is what makes this path useful on a device nobody has ported yet.
@@ -21,7 +21,7 @@ package dev.busung.s25uroot
  *
  * There is deliberately no "try one, then the other" mode. A failed load patches the kernel and leaves a
  * marker only a reboot clears, so a fallback inside one run would be a second load into a kernel that is
- * already partly patched — the run is refused in that state, not retried.
+ * already partly patched the run is refused in that state, not retried.
  */
 enum class PayloadTier {
     /** The payload entry for this exact device, built for the kernel release it runs. */

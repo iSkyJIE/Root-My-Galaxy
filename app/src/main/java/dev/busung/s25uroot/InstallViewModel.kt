@@ -452,7 +452,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
     /**
      * Runs an install and returns once it reaches a terminal phase, for callers outside the
      * install screen that have to keep a foreground service alive for exactly as long as the run
-     * takes — the boot gate, which cannot wait on the UI state itself.
+     * takes the boot gate, which cannot wait on the UI state itself.
      *
      * [unattended] marks a run nobody is watching. It is not a transport preference: it means the run
      * cannot show a permission prompt and cannot ask for Shizuku to be started, because both are
@@ -482,8 +482,8 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
      *
      * It is the same four steps, the same bar and the same log as a payload run, because it is the same kind
      * of thing to a person: something is fetched, something is exploited, something is loaded, and the phone
-     * ends up rooted or it does not. What differs is where it starts from — no helper, no Shizuku, no
-     * temporary root — and that is exactly what the steps are there to show.
+     * ends up rooted or it does not. What differs is where it starts from no helper, no Shizuku, no
+     * temporary root and that is exactly what the steps are there to show.
      *
      * The phases are reused rather than invented (`Checking`, `Downloading`, `Exploiting`,
      * `LoadingKernelSu`), so the screen that draws a payload run draws this one with no change at all: the
@@ -2257,7 +2257,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
     /**
      * Runs the bootstrap helper for a short management command. Unlike the
      * exploit run there is no log file to poll, so output is drained inline
-     * and a hard deadline guards against a helper that never exits — without
+     * and a hard deadline guards against a helper that never exits without
      * this, a hung `--late-load` leaves the install stuck in LoadingKernelSu
      * indefinitely.
      */

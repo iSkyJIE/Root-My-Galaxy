@@ -182,7 +182,7 @@ object PackagesXml {
     /**
      * Effective hex key of one <cert> element (inline `key=`, else the
      * encounter-order table at its index). Null when unresolvable
-     * (dangling index, non-hex inline key) — PMS drops such certs too.
+     * (dangling index, non-hex inline key) PMS drops such certs too.
      */
     fun effectiveKey(cert: Element, table: List<String?>): String? {
         val inline = cert.getAttribute("key")
@@ -529,7 +529,7 @@ object PackagesXml {
         // a rollback that lands as root:root 0644 is a second failure on top of the one it is undoing.
         applyPerms(bak.absolutePath, wantMode, wantUid, wantGid, log)
         // Write strategy: direct overwrite first (works where the inode
-        // allows it), then rename swap. NOTE: no setenforce games — EPERM was
+        // allows it), then rename swap. NOTE: no setenforce games EPERM was
         // observed even with SELinux fully Permissive, so this is not a MAC
         // denial (likely file-level protection); rename(2) walks a different
         // vector (new-file create is allowed) and succeeds.

@@ -34,8 +34,8 @@ enum class PayloadMode {
     /**
      * Use the last payload that completed a verified run, and no network at all.
      *
-     * This is what makes a run possible when the catalog cannot be reached — the API is limited, the
-     * network is down, or the device is being used somewhere without one — and it is the mode a
+     * This is what makes a run possible when the catalog cannot be reached the API is limited, the
+     * network is down, or the device is being used somewhere without one and it is the mode a
      * boot-time run has to use, because at boot there is no one to wait for a download.
      */
     Offline,
@@ -280,8 +280,8 @@ internal object KnownGoodPayloadStore {
     /**
      * Publishes a payload that has already completed a verified run.
      *
-     * The files must match what the profile declares — they were verified during the run, and this
-     * verifies them again — and the bundled helper is recorded, so the pairing cannot be changed by
+     * The files must match what the profile declares they were verified during the run, and this
+     * verifies them again and the bundled helper is recorded, so the pairing cannot be changed by
      * an app update without the cache being refused. The copy goes to a temporary directory and is
      * renamed into place, so an interrupted publish leaves the previous cache intact rather than a
      * half-written one that would then be run.

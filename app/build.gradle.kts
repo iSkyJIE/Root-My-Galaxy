@@ -38,7 +38,7 @@ val appVersionCodeBase = 13
 // The clock the version code is derived from, read through a value source so the reading counts as
 // a build configuration input. Reading the clock directly is not enough: configuration cache
 // entries outlive builds and store the value, so a local rebuild that changed only source files
-// was handed the previous build's clock and reused its version code — two different APKs under one
+// was handed the previous build's clock and reused its version code two different APKs under one
 // identity. Being a configuration input means a changed reading invalidates the entry, so every
 // build reconfigures; that reconfiguration is the price of a version code that is unique per build.
 abstract class BuildClockValueSource : ValueSource<Long, ValueSourceParameters.None> {

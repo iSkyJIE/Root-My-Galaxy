@@ -17,22 +17,22 @@ import java.security.SecureRandom
  * Everything else the app does ends in the system-uid helper, and the helper is only there because a first
  * temporary root has already put it there. This path needs none of that. It runs from an ordinary app, with
  * no `sharedUserId`, no `packages.xml` edit and no reboot to re-read one, and it gets at the kernel through
- * an **unprivileged** `IpSecManager` transform — the technique DirtyInit found and DFRoot used. On a phone
+ * an **unprivileged** `IpSecManager` transform the technique DirtyInit found and DFRoot used. On a phone
  * with no root at all and nothing installed, this is a root path that starts from this APK alone.
  *
  * ## The daemon comes from the payload, in one of two tiers
  *
  * The daemon is not bundled: it is downloaded from the payload repository for the flavour the run asks for,
- * and placed where the shellcode reads it. That is what keeps the argv and the daemon a matched pair — the
+ * and placed where the shellcode reads it. That is what keeps the argv and the daemon a matched pair the
  * chain passes `late-load --package-name <that flavour's manager>` and nothing else, so the daemon has to be
  * one built for that flavour's line.
  *
  * And because the KernelSU half of a payload is the one half that does **not** have to be device-specific,
  * there are two things it can be. They are offered as a choice rather than guessed at ([PayloadTier]):
  *
- * - **Device** — the feed's entry for this exact phone, whose module was built for the kernel release it
+ * - **Device** the feed's entry for this exact phone, whose module was built for the kernel release it
  *   runs. The strongest pairing available, so it is the default.
- * - **Generic** — the KMI-generic daemon for the same flavour, carrying a module per KMI and so covering a
+ * - **Generic** the KMI-generic daemon for the same flavour, carrying a module per KMI and so covering a
  *   whole family of phones. What it has instead of a device-specific module is the daemon's own `vermagic`
  *   rewrite: `load_module()` replaces the module's vermagic with the value the running kernel requires and
  *   retries `init_module`, which is what lets one artifact cover a KMI family.
@@ -43,7 +43,7 @@ import java.security.SecureRandom
  *
  * ## Running it
  *
- * [run] blocks: the native chain waits on the exploit, and this process must stay alive while it runs — the
+ * [run] blocks: the native chain waits on the exploit, and this process must stay alive while it runs the
  * daemon's bytes are handed over through a file descriptor this process owns. It is a worker-thread call,
  * and [report] is called from those worker threads as well as from the native side, so it has to be safe to
  * call from any of them.
@@ -68,7 +68,7 @@ internal object UniversalRootRun {
      *
      * Named here once because two things outside this file read them: the payload sheet, which lists a row per
      * KernelSU per tier and has to say which chain that row is, and a test. The number is not this app's
-     * finding — both root paths here reach the kernel the same way, an unprivileged `IpSecManager` transform
+     * finding both root paths here reach the kernel the same way, an unprivileged `IpSecManager` transform
      * whose ESP packets the kernel decrypts into the page cache of a file the exploit holds open, and the
      * helper's own DirtyFrag bridge states the CVE the technique is filed under. That statement is where this
      * comes from, and `UniversalRootContractTest` holds the two together: a CVE is a fact copied between files,
@@ -122,7 +122,7 @@ internal object UniversalRootRun {
     /**
      * Whether this boot is rooted, in the strongest terms this app is able to read.
      *
-     * The order is the point. [RootStatusProbe] is authoritative and asks the kernel — but only a process
+     * The order is the point. [RootStatusProbe] is authoritative and asks the kernel but only a process
      * with root can, so on a phone where the grant has not happened yet it answers no on a phone that is
      * rooted. The `su` the daemon installs is readable from anywhere and is what is left when the kernel is
      * not: it is a weaker claim and it is named as one, rather than being dressed up as the kernel's answer.
@@ -152,7 +152,7 @@ internal object UniversalRootRun {
      * What the chain's own return codes mean, so one place decides rather than three screens.
      *
      * These are the chain's account of *itself* and are worded that way on purpose: `0` is the patches
-     * landing and the daemon starting, which is not the same fact as this boot being rooted — see
+     * landing and the daemon starting, which is not the same fact as this boot being rooted see
      * [rootCheck], which is what turns one into the other.
      */
     internal fun describe(code: Int): String = when (code) {
@@ -168,7 +168,7 @@ internal object UniversalRootRun {
      *
      * The chain's return code is its *own* account of what it did, and this is the one path in the app where
      * that is not good enough: a module the running kernel refuses still leaves a chain that got all the way
-     * to the end and returned success. So a run that says it worked is asked again — of the kernel — and the
+     * to the end and returned success. So a run that says it worked is asked again of the kernel and the
      * answer is printed beside it rather than instead of it. Nothing here is a verdict about the exploit: it
      * is the difference between "the chain finished" and "this boot is rooted", which are two facts and only
      * one of them is the one a person cares about.
@@ -357,7 +357,7 @@ internal object UniversalRootRun {
     /**
      * The `IpSecManager` half: the transform that makes the kernel do the writing.
      *
-     * Ported from DFRoot's own driver, and unchanged in the parts that matter — an unprivileged UDP
+     * Ported from DFRoot's own driver, and unchanged in the parts that matter an unprivileged UDP
      * encapsulation socket, an SPI allocated on the loopback, one AES-CBC key and one HMAC key, and a
      * transport-mode transform whose ESP packets the kernel decrypts into the page cache of files the
      * exploit has opened for `splice()`. The keys are generated per run and never leave this process: the

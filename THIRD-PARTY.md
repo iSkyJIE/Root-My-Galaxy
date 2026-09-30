@@ -1,11 +1,11 @@
 # Third-party code in this repository
 
 Two projects are vendored into this repository, both of them for the Dirty Frag root path. Neither
-carries a license, so nothing here is granted on the original authors' behalf — this file exists so that
+carries a license, so nothing here is granted on the original authors' behalf this file exists so that
 what came from where is written down rather than inferred from a diff, and so the next person to touch
 these files knows which parts are theirs to change.
 
-## DFReroot — https://github.com/polygraphene/DFReroot
+## DFReroot https://github.com/polygraphene/DFReroot
 
 No `LICENSE`, no `NOTICE`, and no SPDX header in any of the files below: all rights reserved by default.
 Taken because the mechanism is the point and the alternative was not having it.
@@ -27,12 +27,12 @@ Taken because the mechanism is the point and the alternative was not having it.
 | `dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/DmcVault.kt` | `app/…/DmcVault.kt` | Rewritten: the reflection is theirs, the shape check and its reasons are ours |
 | `dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/DmcBootReceiver.kt` | `app/…/DmcBootReceiver.kt` | Rewritten: gated on this app's setting, where theirs writes unconditionally |
 | `.DmcBootReceiver` in `dfr/src/main/AndroidManifest.xml` | the same entry in `app/src/main/AndroidManifest.xml` | Same receiver, declared in the helper instead |
-| `dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/DmcGate.kt` | — | **Ours, and it has no counterpart upstream** |
+| `dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/DmcGate.kt` | | **Ours, and it has no counterpart upstream** |
 
 **Ours, in the same flow:** `dfr/` as a Gradle module (their `app` module), `DfrInstall.kt`,
 `DfrFlow.kt`, `DfrApk.kt`, `DfrUi.kt`, every test under `dfr` in both modules, and the decision of how
 the flow is driven. Their two-APK split is forced by `sharedUserId="android.uid.system"` rather than
-chosen — see the module comment in `settings.gradle.kts`.
+chosen see the module comment in `settings.gradle.kts`.
 
 **The D2 fix is gated here and is not upstream.** Theirs writes the vault's flag at every boot for
 everyone who installed it; ours is a setting in this app that starts off, because the write is a change
@@ -42,11 +42,11 @@ That is also the whole reason `DmcGate.kt` exists: the switch is the app's, the 
 happen is a point where the app cannot run at all.
 
 The kernel module's **source and build script** are vendored at [`dirtyfrag-lkm/`](dirtyfrag-lkm/) —
-`dirtyfrag.c`, its `Makefile`, and upstream's `build.sh` — taken from the same repository at 2.2.0. Until now
+`dirtyfrag.c`, its `Makefile`, and upstream's `build.sh` taken from the same repository at 2.2.0. Until now
 this project shipped the eight prebuilt modules without their recipe: nothing here could rebuild one, and a
 KMI could not be added from this tree at all. The script builds each module inside the same DDK images the
 payload repository already pulls (`ghcr.io/ylarod/ddk-min:<kmi>`), and applies the size diet upstream
-documents — `-Os` with unwind tables dropped, then `llvm-objcopy --strip-unneeded` and the `-R` removals that
+documents `-Os` with unwind tables dropped, then `llvm-objcopy --strip-unneeded` and the `-R` removals that
 take it from 13.4 KiB to about 7.8 KiB. That diet is not tidiness: the module is written through the exploit
 page by page, so its size is a page count.
 
@@ -54,7 +54,7 @@ The eight modules are **verified as taken rather than merely similar**: the copi
 `app/src/main/cpp/dfroot/ko/` and `dfr/src/main/jni/` are byte-identical to upstream's committed ones, KMI for
 KMI, by sha256.
 
-## DFReroot-S25U — https://github.com/igorcv88/DFReroot-S25U
+## DFReroot-S25U https://github.com/igorcv88/DFReroot-S25U
 
 A fork of DFReroot (above) whose work is mostly *hardening* rather than features, and which found two defects in
 `packages.xml` handling by running it on hardware. One of them was in this repository's own copy: the mode and
@@ -69,10 +69,10 @@ repository had it. Its `CMakeLists.txt` builds it as an executable; getting it o
 command is a separate step, because an executable target is not packaged into the APK the way a library's `.so`
 is.
 
-## DFRoot — https://github.com/diabl0w/DFRoot
+## DFRoot https://github.com/diabl0w/DFRoot
 
 No `LICENSE`, no `NOTICE`, no SPDX header in any of the files below: all rights reserved by default. Taken
-for the same reason as DFReroot above — the mechanism is the point — and it is the chain that roots a phone
+for the same reason as DFReroot above the mechanism is the point and it is the chain that roots a phone
 from an **ordinary app**, with no system-uid helper, no `packages.xml` inject and no first temporary root.
 
 | Here | There | State |
@@ -81,13 +81,13 @@ from an **ordinary app**, with no system-uid helper, no `packages.xml` inject an
 | `app/src/main/cpp/dfroot/{libc.S,libcxx.S,elf_parser.c,splicehelper.c,include.inc,logging.h,aes256.h,hmac_sha256.h,splicehelper}` | `app/src/main/jni/…` | Verbatim |
 | `app/src/main/cpp/dfroot/ko/dirtyfrag-android*.ko` | `app/src/main/jni/ko/…` | Bytes, unchanged |
 | `app/src/main/cpp/dfroot/CMakeLists.txt` | `app/src/main/jni/CMakeLists.txt` | Build paths rewritten for a subdirectory; the two custom steps and the `.incbin` layout are theirs |
-| *(no longer shipped)* | `app/src/main/assets/ksud` | **Their daemon is not in this repository any more.** It was, and it was replaced by one our payload repository builds for the device's own kernel — see the note below |
-| `UniversalRoot.kt`, `UniversalRootRun.kt`, `UniversalRootUi.kt` | — | **Ours.** The `IpSecManager` driver is a rewrite of their `MainActivity`/`BootReceiver`: the same calls in the same order, but written here rather than ported, which is worth knowing when it misbehaves |
+| *(no longer shipped)* | `app/src/main/assets/ksud` | **Their daemon is not in this repository any more.** It was, and it was replaced by one our payload repository builds for the device's own kernel see the note below |
+| `UniversalRoot.kt`, `UniversalRootRun.kt`, `UniversalRootUi.kt` | | **Ours.** The `IpSecManager` driver is a rewrite of their `MainActivity`/`BootReceiver`: the same calls in the same order, but written here rather than ported, which is worth knowing when it misbehaves |
 
 **Why the daemon is bundled, against this project's own preference.** Everywhere else, the daemon comes
 from the payload, because a daemon is version-locked to the kernel module that loads it and three managers
 here have their own builds. This chain is the exception, and it was measured rather than assumed: handed
-the payload's daemon — either flavour — it starts and dies in silence, leaving no module and no log line,
+the payload's daemon either flavour it starts and dies in silence, leaving no module and no log line,
 while their `ksud` in the same chain on the same boot logs a complete late-load and roots the phone.
 
 The reason is what the two daemons are built for. Theirs carries its kernel module **inside itself**, which
@@ -95,7 +95,7 @@ is what this invocation asks for: the argv is `late-load --package-name me.weish
 /data/system/ksud --ro-partitions`, with no path to a module anywhere in it. Our payload's daemons are built
 for the regular flow, where the app stages files around them first.
 
-## LSPromise — https://github.com/LSPosed/LSPromise
+## LSPromise https://github.com/LSPosed/LSPromise
 
 Also no license. One file, and it is the JNI bridge whose package name cannot change: `exp.c` registers
 `Java_org_lsposed_lspromise_DirtyFrag_*` natives, so the Java class has to keep that package.

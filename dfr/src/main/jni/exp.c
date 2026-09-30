@@ -398,7 +398,7 @@ static int do_one_write(int file_fd, off_t offset, uint32_t spi, int use_helper)
         }
     }
     s = splice(pfd[0], NULL, sk_send, NULL, 24 + 16, SPLICE_F_MOVE);
-    /* still proceed regardless of splice rc — kernel may have already
+    /* still proceed regardless of splice rc kernel may have already
      * decrypted the page in the time between splice and recv */
     // we may not need this.
     // usleep(150 * 1000);

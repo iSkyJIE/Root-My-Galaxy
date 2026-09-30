@@ -9,7 +9,7 @@ import org.junit.Test
  * The payload sheet's two groups and the rule that separates them.
  *
  * The universal root used to be a card on the home screen with its own two dialogs, and the whole point of
- * moving it into the list is that it is listed by the sheet's own controls like everything else — except for
+ * moving it into the list is that it is listed by the sheet's own controls like everything else except for
  * one, where the correct behaviour is the opposite of the sheet's default. These cases are that rule and the
  * three ways a row is found, asked of [payloadRows] rather than of the screen, because the screen is a list of
  * items and what can go wrong here is which items.
@@ -17,7 +17,7 @@ import org.junit.Test
  * The toggle is the case worth having a test for: `showOnlyMyDevice` is **on by default**, and it filters on
  * `matches`, which asks a profile about a phone. A universal row is not a profile and belongs to no device, so
  * a version of this that handed the toggle to both kinds would compile, look right in a screenshot, and hide
- * this entire flow on the default state of the sheet for every phone whose catalog has no entry — which is the
+ * this entire flow on the default state of the sheet for every phone whose catalog has no entry which is the
  * phone this flow exists for.
  */
 class PayloadChoiceTest {
