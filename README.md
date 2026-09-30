@@ -1432,8 +1432,8 @@ carries a version name that says which one it is:
 
 | build | version name | version code |
 |---|---|---|
-| CI | `0.5+ci.<run number>.<commit>` | base + seconds since 2026-01-01 UTC |
-| local | `0.5+local.<commit>` | base + seconds since 2026-01-01 UTC |
+| CI | `0.6+ci.<run number>.<commit>` | base + seconds since 2026-01-01 UTC |
+| local | `0.6+local.<commit>` | base + seconds since 2026-01-01 UTC |
 
 `appVersionBase` in `app/build.gradle.kts` is the only version written by hand. Both workflows
 read that literal out of the file, and a release tag is `v<base>`.
