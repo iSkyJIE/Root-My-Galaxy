@@ -10,6 +10,14 @@ these files knows which parts are theirs to change.
 No `LICENSE`, no `NOTICE`, and no SPDX header in any of the files below: all rights reserved by default.
 Taken because the mechanism is the point and the alternative was not having it.
 
+**Taken at `274b0ef`** ("Change target lib files"), and updated from it to **`9edc769`** ("Version
+2.2.0"), which is the revision every file below was checked against. Both are written down because this
+copy was assembled across a week of upstream's releases rather than taken whole, so a diff against today's
+upstream no longer says where it began: `exp.c` is now byte-identical to `9edc769` and was to `274b0ef`
+before it, and the difference between the two is the four JNI entry points upstream deleted in between.
+The eight modules are the one part that cannot answer the question - their bytes are identical at both
+revisions - so they date nothing on their own.
+
 | Here | There | State |
 |---|---|---|
 | `app/src/main/java/dev/busung/s25uroot/dfr/Abx.kt` | `installer/…/Abx.kt` | Close to verbatim |
@@ -17,11 +25,13 @@ Taken because the mechanism is the point and the alternative was not having it.
 | `app/src/main/java/dev/busung/s25uroot/dfr/SigKey.kt` | `installer/…/SigKey.kt` | Verbatim |
 | `app/src/main/java/dev/busung/s25uroot/dfr/SysKey.kt` | `installer/…/SysKey.kt` | Verbatim |
 | `app/src/main/java/dev/busung/s25uroot/dfr/InjectMain.kt` | `installer/…/InjectMain.kt` | Package name and default key package changed |
-| `dfr/src/main/jni/exp.c`, `stage1.S`, `elf_parser.c`, `include.inc`, `logging.h`, `splicehelper.c` | `app/src/main/jni/…` | Verbatim |
-| `dfr/src/main/jni/dirtyfrag-android*.ko`, `splicehelper` | built by their `build.sh` | Bytes, unchanged |
-| `dfr/src/main/jni/CMakeLists.txt` | `app/src/main/jni/CMakeLists.txt` | Verbatim |
+| `dfr/src/main/jni/{exp.c,elf_parser.c,include.inc,logging.h,splicehelper.c}` | `app/src/main/jni/…` | Verbatim, and byte-identical to `9edc769` by sha256 |
+| `dfr/src/main/jni/stage1.S` | `app/src/main/jni/stage1.S` | **Not verbatim, and the file to read before any update of this copy.** Its compiled-in data is this project's: the vendor library it patches, the daemon path it execs (`/data/system/rmgnext-ksud`, where upstream's is `/data/system/dfreroot-ksud`), and the `late-load` command line, which is this project's daemon's and takes no `--stage-from` |
+| `dfr/src/main/jni/dirtyfrag-android*.ko` | `app/src/main/jni/…` | Bytes, unchanged: identical at `274b0ef` and at `9edc769` |
+| `dfr/src/main/jni/splicehelper` | built by `build-splice.sh` | Upstream does not commit this binary, so there is nothing to compare it against: it is the file that recipe produces, and this repository's copy is the only one either project has |
+| `dfr/src/main/jni/CMakeLists.txt` | `app/src/main/jni/CMakeLists.txt` | Verbatim except one added target: `dfr_verified_exec`, from DFReroot-S25U |
 | `dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/StageHop.kt` | `app/…/StageHop.kt` | Comments rewritten, logic unchanged |
-| `dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/StageReceiver.kt` | `app/…/StageReceiver.kt` | Codes named, else unchanged |
+| `dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/StageReceiver.kt` | `app/…/StageReceiver.kt` | Codes named, and the controller is offered to the service as upstream's is; the broadcast is kept here as the fallback where upstream sends only through the bind |
 | `dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/KsudStage.kt` | `app/…/KsudStage.kt` | Destination and daemon sources changed |
 | `dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/Stage2Activity.kt` | `app/…/MainActivity.kt` | Rewritten in code rather than XML layouts |
 | `dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/DmcVault.kt` | `app/…/DmcVault.kt` | Rewritten: the reflection is theirs, the shape check and its reasons are ours |
@@ -29,17 +39,42 @@ Taken because the mechanism is the point and the alternative was not having it.
 | `.DmcBootReceiver` in `dfr/src/main/AndroidManifest.xml` | the same entry in `app/src/main/AndroidManifest.xml` | Same receiver, declared in the helper instead |
 | `dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/DmcGate.kt` | | **Ours, and it has no counterpart upstream** |
 
+**Of the twelve upstream commits between `274b0ef` and `9edc769`, exactly one had code this copy did not
+have, and it has now been applied: `a9a81bd` ("Remove unused codes").** It deleted four JNI entry points -
+`patchMod`, `patchLibc`, `patchCxx`, `createOrphanProcess` - from `exp.c` and `DirtyFrag.java`, the four
+transaction codes that called them in `StageReceiver`, and two helpers nothing had used for a release
+(`Abx.probeInt`/`probeBytesHex`, `PackagesXml.findInstalledKey`). The four transactions were a per-step way
+to drive the same kernel writes `runAll` makes in one call, and no caller existed on either side.
+
+Of the other eleven, four are upstream's own version bumps, one is a README line and one is `D2_Error.md`
+- there is no code in this repository to change for any of them. The remaining five were ported as they
+landed rather than in one pass, which is why the copy is a week's worth of upstream's releases: the
+`packages.xml` permissions read from the original file rather than the backup (`f9120a6`), the D2 vault
+write (`d5ff10c`) and its switch (`1031e82`), root at boot (`906c144`), and the controller handed back
+through a bound service (`e6caf5b`).
+
 **Ours, in the same flow:** `dfr/` as a Gradle module (their `app` module), `DfrInstall.kt`,
 `DfrFlow.kt`, `DfrApk.kt`, `DfrUi.kt`, every test under `dfr` in both modules, and the decision of how
 the flow is driven. Their two-APK split is forced by `sharedUserId="android.uid.system"` rather than
 chosen see the module comment in `settings.gradle.kts`.
 
-**The D2 fix is gated here and is not upstream.** Theirs writes the vault's flag at every boot for
-everyone who installed it; ours is a setting in this app that starts off, because the write is a change
-to a Samsung store whose layout was confirmed on one chip and a wrong write there cannot be undone.
-That is also the whole reason `DmcGate.kt` exists: the switch is the app's, the write is the helper's
-(the vault only answers to a system-uid process), and the point in the boot where the write has to
-happen is a point where the app cannot run at all.
+**The D2 fix is gated here, and upstream gates it too now - not the same way.** When this was ported
+theirs wrote the vault's flag at every boot for everyone who had installed it; `1031e82` (v2.1.0) added a
+switch of their own, kept in a `/data/system/dfreroot.xml` their helper owns and written by a checkbox in
+its screen. This project's switch is the **app's**, offered where the rest of the flow is configured, and
+the helper is told what it decided through its own device-protected storage - because the write has to
+happen at `LOCKED_BOOT_COMPLETED`, when the app cannot run at all and a credential-encrypted preference
+cannot be read. Off is the default in both, for the same reason: the write is a change to a Samsung store
+whose layout was confirmed on one chip, and a wrong write there cannot be undone. `DmcGate.kt` exists for
+the reading half of that and has no counterpart upstream.
+
+**Root at boot is upstream's feature and this project's own answer to it.** `906c144` (v2.2.0) has their
+helper start its own run from `LOCKED_BOOT_COMPLETED`, guarded by a flag file
+(`/data/system/dfreroot-running`) and by the boot id they keep in `dfreroot.xml`. Here the decision is
+the app's - `AutoRootBootReceiver`, `DfrBoot`, `AutoRootSupport` - because the app is the half that can
+see whether the manager is already live and tell the user why a boot did nothing, and the helper only
+refuses a launch it cannot attribute to root or the `shell` user ([`Autorun.kt`](dfr/src/main/java/dev/busung/s25uroot/dfr/stage2/Autorun.kt)).
+Neither `AutoRoot.kt` nor `AutoRootReceiver.kt` is vendored.
 
 The kernel module's **source and build script** are vendored at [`dirtyfrag-lkm/`](dirtyfrag-lkm/) —
 `dirtyfrag.c`, its `Makefile`, and upstream's `build.sh` taken from the same repository at 2.2.0. Until now

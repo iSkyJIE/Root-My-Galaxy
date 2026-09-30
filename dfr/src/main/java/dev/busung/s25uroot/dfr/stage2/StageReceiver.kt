@@ -48,13 +48,10 @@ class StageReceiver : BroadcastReceiver() {
             override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
                 try {
                     when (code) {
-                        // One code per step of the exploit, and one that runs them in order. They are
-                        // separate because a run that stops at step three says which step refused, and
-                        // that is the whole diagnosis.
-                        CODE_PATCH_MODULE -> reply?.writeInt(DirtyFrag.patchMod())
-                        CODE_PATCH_LIBC -> reply?.writeInt(DirtyFrag.patchLibc())
-                        CODE_PATCH_CXX -> reply?.writeInt(DirtyFrag.patchCxx())
-                        CODE_ORPHAN -> reply?.writeInt(DirtyFrag.createOrphanProcess())
+                        // One code, because one is all anybody asks for. DFReroot's per-step codes are
+                        // gone from its own receiver and from its JNI bridge alike - the exploit runs its
+                        // stages in order and a step-by-step entry point was a second way to drive the same
+                        // kernel writes, with no caller on either side.
                         CODE_RUN_ALL -> {
                             val reporter = data.readStrongBinder()
                             reply?.writeInt(DirtyFrag(reporter).runAll())
@@ -160,10 +157,6 @@ class StageReceiver : BroadcastReceiver() {
 
         const val CONTROLLER = "CONTROLLER"
 
-        private const val CODE_PATCH_MODULE = 1
-        private const val CODE_PATCH_LIBC = 2
-        private const val CODE_PATCH_CXX = 3
-        private const val CODE_ORPHAN = 4
         private const val CODE_RUN_ALL = 5
     }
 }

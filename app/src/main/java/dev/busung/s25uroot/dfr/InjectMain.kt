@@ -26,7 +26,7 @@ import dev.busung.s25uroot.BuildConfig
  * The signing key comes from --keyhex (GUI path: MainActivity reads it via
  * PackageManager, which handles v1/v2/v3 uniformly), from --apk (manual
  * path: this entry builds the System Context via ActivityThread.systemMain()
- * and reads the APK file through PackageManager see [SysKey]), or from
+ * and reads the APK file through PackageManager — see [SysKey]), or from
  * --pkg (repair path: key of the already-installed package).
  *
  * Modes: --dump (parse + summarize only, zero writes; run FIRST),
