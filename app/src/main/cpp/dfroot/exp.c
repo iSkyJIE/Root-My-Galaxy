@@ -17,46 +17,14 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <jni.h>
+#include "reporter.h"
 #include "aes256.h"
 #include "hmac_sha256.h"
 
-struct Reporter { JNIEnv *env; jobject obj; };
-
-/* The reporter's `report(String)`, resolved from the object we were handed rather than
- * from a class name.
- *
- * Upstream resolves it in JNI_OnLoad, by `FindClass("df/root/IReporter")`. That is a
- * second copy of a Java declaration living in C, and when the two disagree the failure
- * is not a missing callback: `FindClass` throws, the `GetMethodID` after it is called
- * with an exception pending, and the JVM aborts the process -
- * `JNI DETECTED ERROR IN APPLICATION` inside `System.loadLibrary`, which reads like a
- * broken build rather than a class that moved. It did exactly that here on the first
- * tap, because the port renamed the class and the name in this file came with the code
- * it was copied from.
- *
- * Asking the object for its own class cannot go stale that way: whatever Kotlin class
- * the caller passes has to have a `report(String)`, and one that does not gets no
- * output instead of a dead process. Cached after the first call, because every step of
- * the chain reports and this is on that path - method IDs are stable for the life of
- * the process, and one run has one reporter class.
+/*
+ * The reporter is resolved from the object it was handed, not from a class name - see reporter.h, which is
+ * also where `reportfmt` lives now. Upstream resolves it here in `JNI_OnLoad`, by `FindClass`.
  */
-static jmethodID reporter_method(JNIEnv *env, jobject obj) {
-    static jmethodID cached = NULL;
-    if (cached != NULL) return cached;
-    jclass cls = (*env)->GetObjectClass(env, obj);
-    if (cls == NULL) return NULL;
-    jmethodID mid = (*env)->GetMethodID(env, cls, "report", "(Ljava/lang/String;)V");
-    if (mid == NULL) {
-        /* Cleared and returned as "no output": a reporter without `report` is a caller's
-         * bug to see, and not a reason to take the phone down mid-run. */
-        (*env)->ExceptionClear(env);
-        (*env)->DeleteLocalRef(env, cls);
-        return NULL;
-    }
-    cached = mid;
-    (*env)->DeleteLocalRef(env, cls);
-    return cached;
-}
 
 struct PatchRestore {
     const char *lib;
@@ -68,21 +36,15 @@ struct PatchRestore {
     int      valid;
 };
 
-static void reportfmt(struct Reporter *r, const char *fmt, ...) __attribute__((__format__(printf, 2, 3)));
-static void reportfmt(struct Reporter *r, const char *fmt, ...) {
-    if (!r) return;
-    va_list va; va_start(va, fmt);
-    char buf[1024]; vsnprintf(buf, sizeof(buf), fmt, va);
-    jstring s = (*r->env)->NewStringUTF(r->env, buf);
-    jmethodID mid = reporter_method(r->env, r->obj);
-    if (mid != NULL) (*r->env)->CallVoidMethod(r->env, r->obj, mid, s);
-    (*r->env)->ExceptionClear(r->env);
-    (*r->env)->DeleteLocalRef(r->env, s);
-}
-#define REPORTLN(fmt, ...) reportfmt(reporter, fmt "\n" __VA_OPT__(,) __VA_ARGS__)
-
 static const char kCrashDump[] = "/apex/com.android.runtime/bin/crash_dump64";
-static const char target_lib_path[] = "/vendor/lib64/libbinderdebug.so";
+static char    *libcxx_ko_target;
+
+/*
+ * The shellcode's `package_name=` buffer, in bytes. It is the module parameter the app passes the manager
+ * through, so it has to hold the longest of the three packages with room for the name and the NUL - and it
+ * has to agree with the `.skip` in libcxx.S, which is what makes the buffer that long.
+ */
+#define LIBCXX_PARAM_PACKAGE_BYTES 64
 
 /* SA parameters set by Java via nativeRunAll() before any patching. */
 static int      g_encap_port;
@@ -128,7 +90,7 @@ static int read_vendor_content(off_t offset, uint8_t buf[16], struct Reporter *r
             if (dup2(rdpipe[1], 0) < 0) _exit(1);
             close(rdpipe[1]);
         }
-        execl(kCrashDump, "crashdump64", offstr, target_lib_path, "r", NULL);
+        execl(kCrashDump, "crashdump64", offstr, libcxx_ko_target, "r", NULL);
         _exit(1);
     }
     close(rdpipe[1]);
@@ -197,7 +159,7 @@ static int do_one_write_cbc(int sk_send, int file_fd, off_t offset,
         if (pid < 0) { REPORTLN("vfork failed: %s", strerror(errno)); goto out_pipe; }
         if (pid == 0) {
             if (pfd[1] != 1 && dup2(pfd[1], 1) < 0) _exit(1);
-            execl(kCrashDump, "crashdump64", offstr, target_lib_path, NULL);
+            execl(kCrashDump, "crashdump64", offstr, libcxx_ko_target, NULL);
             _exit(1);
         }
         int st;
@@ -319,15 +281,12 @@ extern char libcxx_start[];
 extern char libcxx_data[];
 extern uint32_t libcxx_len;
 extern char libcxx_first_inst_copy[];
-extern char libc_start[];
-extern char libc_data[];
-extern uint32_t libc_len;
-extern char libc_first_inst_copy[];
-extern uint32_t libc_soft_reboot_off;
-extern uint32_t libc_package_off;
+extern uint32_t libcxx_ko_target_off;
+extern uint32_t libcxx_param_package_off;
 
 int find_hook_target(const char *lib, const char *sym,
-                     uint64_t *hook, uint64_t *payload, uint32_t *first_insn);
+                     uint64_t *hook, uint64_t *payload, uint32_t *first_insn,
+                     struct Reporter *reporter);
 
 asm(
     ".section .rodata\n"
@@ -408,11 +367,12 @@ static char *pad16(const char *data, size_t len, size_t *out_len) {
     return buf;
 }
 
+
 static int patch_ko(struct Reporter *reporter) {
     /* pick KO image */
     int andr = 0, major = 0, minor = 0;
     if (read_device_versions(&andr, &major, &minor) != 0) {
-        REPORTLN("version check failed"); return 1;
+        REPORTLN("Unable to match kernel version - possibly unsupported Non-GKI device"); return 1;
     }
     const struct KoImage *ko = select_ko_image(andr, major, minor);
     if (!ko) {
@@ -440,8 +400,8 @@ static int patch_ko(struct Reporter *reporter) {
     if (!ko_buf) return -1;
 
     /* patch #2: write KO into vendor lib via crash_dump bridge */
-    REPORTLN("* patch #2 (libbinderdebug.so ← dirtyfrag.ko, %zu bytes)", ko_len_padded);
-    ret = patch_file_cbc(target_lib_path, ko_buf, ko_len_padded, 0, 1, reporter);
+    REPORTLN("* patch #2 (%s ← dirtyfrag.ko, %zu bytes)", libcxx_ko_target, ko_len_padded);
+    ret = patch_file_cbc(libcxx_ko_target, ko_buf, ko_len_padded, 0, 1, reporter);
     free(ko_buf);
     if (ret) REPORTLN("patch #2 failed: %d", ret);
     return ret;
@@ -452,7 +412,7 @@ static int patch_hook(const char *lib, const char *sym,
                       char *first_inst_copy,
                       struct Reporter *reporter, struct PatchRestore *restore) {
     uint64_t hook_off, shell_off; uint32_t first_insn;
-    if (find_hook_target(lib, sym, &hook_off, &shell_off, &first_insn)) {
+    if (find_hook_target(lib, sym, &hook_off, &shell_off, &first_insn, reporter)) {
         REPORTLN("find %s hook target failed", lib); return 1;
     }
     REPORTLN("%s hook=0x%lx shell=0x%lx len=%u", lib, hook_off, shell_off, stage_len);
@@ -547,18 +507,29 @@ static int createOrphanProcess(struct Reporter *reporter) {
 
 static int has_marker(const char *p) { return access(p, F_OK) == 0; }
 
+/*
+ * The chain, driven from the app.
+ *
+ * The symbol names the class this is declared on, so it is `UniversalRoot` here where upstream has
+ * `df/root/ExploitRunner` - the Kotlin side of the same boundary is UniversalRoot.kt, and
+ * `UniversalRootContractTest` derives this name from that file rather than spelling it out.
+ *
+ * [koTargetPath] is the vendor library the exploit writes through: the module's bytes are patched into its
+ * page cache, and the shellcode's `insmod` is asked to load them from there. A value rather than a constant
+ * because which vendor file exists, and is loadable, differs by device - the app picks it.
+ *
+ * [packageName] is the manager the module's user-space half is told to serve. It travels into the module as
+ * an `insmod` parameter, so one chain serves all three KernelSU projects.
+ */
 JNIEXPORT jint JNICALL
-/* Renamed from DFRoot's `Java_df_root_MainActivity_nativeRunAll`: the JNI symbol is
- * derived from the declaring class, so the only change a port into another package needs
- * is the name of that class. Everything below is theirs. */
 Java_dev_busung_s25uroot_UniversalRoot_nativeRunAll(JNIEnv *env, jclass clz __attribute__((unused)),
                                                jobject reporter_obj,
+                                               jstring koTargetPath,
                                                jint encapPort, jint spi,
                                                jbyteArray aesCbcKey,
                                                jbyteArray hmacKey, jint icvLen,
                                                jint senderPort,
-                                               jstring jpackage_name,
-                                               jboolean softReboot) {
+                                               jstring packageName) {
     struct Reporter ro = {.env = env, .obj = reporter_obj}, *reporter = &ro;
 
     g_encap_port  = (int)encapPort;
@@ -575,29 +546,28 @@ Java_dev_busung_s25uroot_UniversalRoot_nativeRunAll(JNIEnv *env, jclass clz __at
     memcpy(g_hmac_key, hb, 32);
     (*env)->ReleaseByteArrayElements(env, hmacKey, hb, JNI_ABORT);
 
-    libc_data[libc_soft_reboot_off] = softReboot ? 1 : 0;
-
-    // The package the daemon serves, written into the slot the argv points at. Absent leaves the slot as the
-    // linker made it - empty - which a daemon would take for a package named "" rather than for a default,
-    // so the caller always passes one; the check is here because a null jstring would otherwise be a
-    // GetStringUTFChars on nothing.
-    if (jpackage_name != NULL) {
-        const char *pkg = (*env)->GetStringUTFChars(env, jpackage_name, NULL);
-        if (pkg != NULL) {
-            strncpy(libc_data + libc_package_off, pkg, 63);
-            libc_data[libc_package_off + 63] = '\0';
-            REPORTLN("daemon serves: %s", pkg);
-            (*env)->ReleaseStringUTFChars(env, jpackage_name, pkg);
-        }
+    libcxx_ko_target   = libcxx_data + libcxx_ko_target_off;
+    const char *p = (*env)->GetStringUTFChars(env, koTargetPath, NULL);
+    if (p) {
+        strncpy(libcxx_ko_target, p, 63);
+        libcxx_ko_target[63] = '\0';
+        (*env)->ReleaseStringUTFChars(env, koTargetPath, p);
+    }
+    // The module's `package_name` parameter, written into the shellcode's own buffer: `insmod` is handed
+    // `package_name=<manager>`, and the module passes that manager to `ksud late-load --package-name`.
+    // The shellcode carries a default, so a string that cannot be read is still a valid parameter rather
+    // than an empty one - `--package-name ''` would have the daemon serve nobody.
+    uint8_t *param = (uint8_t *)(libcxx_data + libcxx_param_package_off);
+    const char *mgr = packageName ? (*env)->GetStringUTFChars(env, packageName, NULL) : NULL;
+    if (mgr) {
+        snprintf((char *)param, LIBCXX_PARAM_PACKAGE_BYTES, "package_name=%s", mgr);
+        (*env)->ReleaseStringUTFChars(env, packageName, mgr);
     }
 
-    struct PatchRestore libc_r = {0}, libcxx_r = {0};
+    struct PatchRestore libcxx_r = {0};
 
     int rc = 3;
     if (patch_ko(reporter)) goto done;
-    if (patch_hook("/system/lib64/libc.so", "__libc_init",
-                   libc_data, libc_len, libc_start, libc_first_inst_copy,
-                   reporter, &libc_r)) goto done;
     if (patch_hook("/system/lib64/libc++.so",
                    "_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEE6sentryC1ERS3_",
                    libcxx_data, libcxx_len, libcxx_start, libcxx_first_inst_copy,
@@ -611,58 +581,33 @@ Java_dev_busung_s25uroot_UniversalRoot_nativeRunAll(JNIEnv *env, jclass clz __at
     static const struct {
         const char *path;
         const char *msg;
+        int         rc;
     } markers[] = {
-        { "/dev/df",    "1. libc++: mutex acquired, forking"       },
-        { "/dev/dfm0",  "2. libc: module loaded - selinux permissive" },
-        { "/dev/dfm1",  "3. switching namespace"                   },
-        { "/dev/dfm2",  "4. bind mounting logcat"                  },
-        { "/dev/dfm3",  "5. ksud exited ok"                        },
-        { "/dev/dfm4",  "5. ksud exited with error"                },
+        { "/dev/df",   "libc++: mutex acquired, loading custom module", -1 },
+        { "/dev/dfm0", "***SUCCESS***",                        0 },
+        { "/dev/dfm1", "***FAILED***: ksud exited with error", 1 },
     };
     int seen[sizeof(markers)/sizeof(markers[0])] = {0};
 
-    // Longer than upstream's 30 seconds, and for a measured reason: this daemon's late-load does not finish
-    // in that window on this device. It had already loaded the module and installed `su` when the window
-    // expired, and the chain reported "check logs" - a failure on a phone that was rooted. Waiting is cheap
-    // here, because the alternative is a run that roots and then says it did not.
-    //
-    // Named rather than written twice, because the message at the end of this loop reports how long it
-    // waited - and the loop's own `elapsed` is scoped to the loop, which is how the first version of that
-    // message failed to compile.
-    const int kWaitMillis = 90000;
-    for (int elapsed = 0; elapsed < kWaitMillis; elapsed += 10) {
+    for (int elapsed = 0; elapsed < 5000; elapsed += 10) {
         usleep(10000);
         for (size_t j = 0; j < sizeof(markers)/sizeof(markers[0]); j++) {
             if (!seen[j] && has_marker(markers[j].path)) {
                 seen[j] = 1;
                 REPORTLN("%s", markers[j].msg);
-                if (strcmp(markers[j].path, "/dev/dfm3") == 0) {
-                    REPORTLN("***SUCCESS***");
-                    rc = 0;
-                    goto done;
-                }
-                if (strcmp(markers[j].path, "/dev/dfm4") == 0) {
-                    REPORTLN("***FAILED***: ksud exited with error");
-                    rc = 1;
+                if (markers[j].rc >= 0) {
+                    rc = markers[j].rc;
                     goto done;
                 }
             }
         }
     }
-    // The wait expired without either of the daemon's exit markers. That is **not** a step that failed, and
-    // saying so was actively misleading: this line sits directly under "4. bind mounting logcat", so
-    // "***FAILED***" read as the bind mount having failed - and the bind mount is the last thing that
-    // *succeeded*, since its marker is written after it. What has actually happened is that the daemon is
-    // still working, past a window this chain does not get to decide the length of.
-    REPORTLN("***UNKNOWN***: the daemon had not exited after %ds, so the chain cannot say",
-             kWaitMillis / 1000);
+    REPORTLN("***FAILED***: check logs");
 done:
     if (rc == 3) REPORTLN("***FAILED***: failed to patch files");
     REPORTLN("\n=== cleanup ===");
     restore_hook(&libcxx_r, reporter);
-    restore_hook(&libc_r, reporter);
     fadvise_drop(kCrashDump, reporter);
     free(libcxx_r.shell_orig);
-    free(libc_r.shell_orig);
     return rc;
 }

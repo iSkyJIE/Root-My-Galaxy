@@ -83,6 +83,35 @@ class RunKindTest {
                 "payload flow's boot gate",
             source("InstallViewModel.kt").contains("fun armUniversalRetryAfterReboot("),
         )
+
+        // And the other end, where an answer is acted on. Guarding which answers are *offered* is no use if
+        // the one that is offered still starts the other flow: the retry handler called `install`, which is
+        // the payload flow, so a universal run's retry ran an install of the other kind - and the log and the
+        // record that followed described a run nobody had asked for. That is the reported bug, from the side
+        // a person actually touches.
+        assertTrue(
+            "the retry handler starts the payload flow whatever the run was, so one flow's control runs the " +
+                "other's",
+            activity.contains("onRetry = { installViewModel.retryRun(selectionId) }"),
+        )
+        assertFalse(
+            "the retry handler is unconditional again",
+            activity.contains("onRetry = { installViewModel.install(selectionId) }"),
+        )
+        val viewModel = source("InstallViewModel.kt")
+        val retry = viewModel.substringAfter("fun retryRun(").substringBefore("\n    /**")
+        .takeIf { it.isNotBlank() }
+            ?: error("InstallViewModel no longer has a retryRun, so the retry is not routed by flow")
+        assertTrue(
+            "the retry no longer tells the two flows apart, so it can start the wrong one",
+            retry.contains("if (state.kind != RunKind.Universal)"),
+        )
+        assertTrue(
+            "the universal retry no longer repeats the plan the run itself resolved, so it would repeat the " +
+                "last plan any run resolved - or none at all",
+            retry.contains("state.universalPlan") &&
+                retry.contains("startUniversalRun(plan.flavor, plan.tier)"),
+        )
     }
 
     @Test
@@ -178,6 +207,39 @@ class RunKindTest {
         assertTrue(
             "the payload flow's own transport is no longer stated, so this is a swap and not an addition",
             detail.contains("R.string.history_shizuku_used"),
+        )
+    }
+
+    @Test
+    fun `no run is started without taking the screen from a discovery in flight`() {
+        // This one is here because it happened, and it is the subtler half of "one run at a time". The screen
+        // on open runs a discovery - a probe and a catalog lookup - which publishes a whole install state when
+        // it finishes, and that state carries no flow and no log. It was claimed, and the payload flow claimed
+        // against it, but the universal run never did: so a discovery already in flight landed in the middle of
+        // a chain run and reset the flow to Payload. The record then said the run was a payload run, the
+        // history row named the payload flow's CVE for a DirtyFrag root, and the run's own opening lines were
+        // gone. A run therefore claims the screen at its start, whichever flow it is.
+        val viewModel = source("InstallViewModel.kt")
+        val universal = viewModel.substringAfter("fun startUniversalRun(")
+            .substringBefore("\n    /**")
+            .takeIf { it.isNotBlank() }
+            ?: error("InstallViewModel no longer has a startUniversalRun")
+        assertTrue(
+            "the universal run does not claim the screen, so a discovery in flight can write over it and " +
+                "reset the flow its record is labelled by",
+            universal.contains("publishClaim.claim()"),
+        )
+        assertTrue(
+            "the universal run no longer guards against another run of this view model",
+            universal.contains("if (installJob?.isActive == true) return"),
+        )
+        // And a run's log is its own: the record is written from this state, so a log left behind is the
+        // previous run's lines filed under the new one.
+        val history = viewModel.substringAfter("private fun startHistory()")
+            .substringBefore("\n    /**")
+        assertTrue(
+            "a new run inherits the previous run's log, so its record opens with another run's lines",
+            history.contains("log = \"\""),
         )
     }
 

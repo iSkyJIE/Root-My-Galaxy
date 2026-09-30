@@ -110,6 +110,39 @@ class DeletionUndoTest {
         )
     }
 
+    @Test
+    fun `clearing the history is the same delete, and cannot take the run in flight`() {
+        // A clear-all is not a different kind of change: it is the same delete over every id, which is what
+        // makes it held before it goes and undoable like a single row. Two facts about it are worth holding,
+        // because both break silently.
+        val source = mainActivity()
+        assertTrue(
+            "clearing the history no longer goes through the delete that holds what it removes, so the undo " +
+                "would have nothing to put back",
+            source.contains("onClearAll = { deleteWithUndo(history.map { it.id }.toSet()) }"),
+        )
+        assertTrue(
+            "clearing the history no longer removes every run rather than the ones a filter is showing, so " +
+                "it would look like it did nothing on a filtered list",
+            // The full list is the parameter, and the filtered one is derived from it below - so this is the
+            // difference between emptying the history and emptying the view.
+            source.contains("onClearAll = { deleteWithUndo(history.map"),
+        )
+        // And the one entry it must not remove. A run writes its record as it goes, so a clear that took that
+        // entry while it was still being written would leave the list holding an account that changes under it
+        // - and the run with nothing to write to.
+        val viewModel = listOf(
+            File("src/main/java/dev/busung/s25uroot/InstallViewModel.kt"),
+            File("app/src/main/java/dev/busung/s25uroot/InstallViewModel.kt"),
+        ).firstOrNull(File::isFile)?.readText()
+            ?: throw AssertionError("InstallViewModel was not found from ${File(".").absolutePath}")
+        assertTrue(
+            "the store's delete no longer refuses the run in flight, so clearing the history can take the " +
+                "record of a run that is still writing it",
+            viewModel.contains("val toDelete = ids.filterNot { it == runningId }"),
+        )
+    }
+
     private fun mainActivity(): String = listOf(
         File("src/main/java/dev/busung/s25uroot/MainActivity.kt"),
         File("app/src/main/java/dev/busung/s25uroot/MainActivity.kt"),

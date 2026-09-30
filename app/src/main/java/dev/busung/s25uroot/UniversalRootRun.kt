@@ -60,8 +60,10 @@ internal object UniversalRootRun {
      * manager happened not to carry one.
      *
      * Upstream builds one daemon and their fork adds two options to it (`--ro-partitions`, `--soft-reboot`);
-     * both of those things the app does itself, so the upstream build is what this drives, and `libc.S`
-     * passes the four arguments it accepts and nothing more.
+     * both of those things the app does itself, so the upstream build is what this drives - and since the
+     * chain's privileged half moved into the kernel module, the command that runs it lives there: the module
+     * names this path and passes `late-load --package-name <manager>` and nothing else, which is the same
+     * three arguments the shellcode used to pass.
      */
     /**
      * The bug this chain uses, and what the project calls the technique.
@@ -354,7 +356,10 @@ internal object UniversalRootRun {
      * The app's own data directory rather than its `files` directory, and device-protected rather than
      * credential-encrypted: `/data/data` is not mounted until the user unlocks, and a boot run of this flow is
      * one of the two reasons the path is what it is. Named here rather than inline in [stage] because three
-     * things now have to agree about it - the staging, the record a boot run verifies against, and `libc.S`.
+     * things now have to agree about it - the staging, the record a boot run verifies against, and the kernel
+     * module whose `late-load` command names it. Since the module's half of the command is compiled in, that
+     * last one is held where the module is built: the payload repository's workflow refuses a module that
+     * names anything but this path, and `dfroot-lkm/README.md` there says why.
      */
     internal fun daemonPath(context: Context): File =
         File(context.createDeviceProtectedStorageContext().filesDir.parentFile, DAEMON)
@@ -412,14 +417,14 @@ internal object UniversalRootRun {
     /**
      * Hands the daemon to the chain and runs it.
      *
-     * [softReboot] is the caller's setting rather than a decision made here: a soft reboot after the module
-     * loads is what finishes KernelSU's own start-up, and whether one happens is the app's `restartAfterRoot`.
+     * Nothing here decides whether to reboot: a soft reboot is the app's `restartAfterRoot` setting, and the
+     * app performs it after the run - the chain is not told about it, which is what the flag it used to
+     * receive was for before the module took over that half.
      */
     internal fun run(
         context: Context,
         daemon: File,
         flavor: KernelSuFlavor,
-        softReboot: Boolean,
         report: (String) -> Unit,
     ): Outcome {
         if (alreadyArmed()) {
@@ -428,7 +433,7 @@ internal object UniversalRootRun {
             )
         }
         val code = try {
-            drive(context, daemon, flavor, softReboot, report)
+            drive(context, daemon, flavor, report)
         } catch (error: Throwable) {
             return Outcome.Refused("The chain could not start: ${error.javaClass.simpleName}: ${error.message}")
         }
@@ -453,7 +458,6 @@ internal object UniversalRootRun {
         context: Context,
         daemon: File,
         flavor: KernelSuFlavor,
-        softReboot: Boolean,
         report: (String) -> Unit,
     ): Int {
         val ipsec = context.getSystemService(Context.IPSEC_SERVICE) as IpSecManager
@@ -478,10 +482,16 @@ internal object UniversalRootRun {
             .setIpv4Encapsulation(encapsulation, senderPort)
             .buildTransportModeTransform(loopback, spi)
 
+        // Which vendor library gets patched, decided here so the log can name it: a run that fails to patch
+        // has to say *what* it could not patch, because the list is per device.
+        val koTarget = chooseKoTarget { File(it).exists() }
+
         return try {
             report("chain: starting (encap port ${encapsulation.port}, spi ${spi.spi})")
+            report("ko target: $koTarget")
             UniversalRoot.nativeRunAll(
                 reporter = UniversalRoot.Reporter { line -> report(line.trim()) },
+                koTarget = koTarget,
                 encapPort = encapsulation.port,
                 spi = spi.spi,
                 aesCbcKey = aesKey,
@@ -491,7 +501,6 @@ internal object UniversalRootRun {
                 // The manager this flavour's daemon serves. One library, so it travels as a value - see
                 // [UniversalRoot.nativeRunAll].
                 packageName = flavor.managerPackage,
-                softReboot = softReboot,
             )
         } finally {
             runCatching { transform.close() }
@@ -503,3 +512,28 @@ internal object UniversalRootRun {
     /** The truncation the transform and the native side have to agree on, in bits. */
     private const val ICV_BITS = 128
 }
+
+/**
+ * Upstream's vendor libraries, in their order: the one that is present on every Samsung this chain has been
+ * run on first, then the two the devices with a different vendor set carry instead.
+ */
+internal val KO_TARGET_CANDIDATES = listOf(
+    "/vendor/lib64/libbinderdebug.so",
+    "/vendor/lib64/libstagefrighthw.so",
+    "/vendor/lib64/libstagefright_aidl_bufferpool2.so",
+)
+
+/**
+ * Which of [KO_TARGET_CANDIDATES] this device will be patched through.
+ *
+ * [exists] rather than a read, because this is a path inside a directory an app may traverse and may not
+ * list: existence is the strongest answer available here, and a candidate that is present but not loadable
+ * fails later, at the patch, which names the file it could not write.
+ *
+ * The fallback is the first candidate rather than a refusal, and that is upstream's choice kept deliberately:
+ * a phone whose vendor set is not on the list is a phone this chain has never been run on, and the attempt
+ * costs a run that fails at the patch and says which file - where a refusal here would cost the same run
+ * without ever trying. The chain checks what it wrote, so the attempt is not taken on trust.
+ */
+internal fun chooseKoTarget(exists: (String) -> Boolean): String =
+    KO_TARGET_CANDIDATES.firstOrNull(exists) ?: KO_TARGET_CANDIDATES.first()

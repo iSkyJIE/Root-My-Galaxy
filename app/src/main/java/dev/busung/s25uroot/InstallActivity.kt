@@ -208,7 +208,10 @@ class InstallActivity : ComponentActivity() {
                     InstallScreen(
                         installState = running?.state() ?: installState,
                         followed = running != null,
-                        onRetry = { installViewModel.install(selectionId) },
+                        // The bar's in-boot answers end here, and they repeat the run *as the flow it was*:
+                        // this used to call `install`, which is the payload flow, so a universal run's retry
+                        // started an install of the other kind. See [InstallViewModel.retryRun].
+                        onRetry = { installViewModel.retryRun(selectionId) },
                         onSkipBootSettle = { installViewModel.skipBootSettle() },
                         onStop = {
                             val target = running

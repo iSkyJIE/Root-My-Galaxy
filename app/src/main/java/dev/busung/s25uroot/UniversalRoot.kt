@@ -59,22 +59,32 @@ object UniversalRoot {
      * root side can name, nothing is handed over through a file descriptor, and this call
      * no longer needs this process to stay alive for its bytes to be readable.
      *
+     * [koTarget] is the vendor library the chain writes through. The module's bytes are patched into
+     * that file's page cache, and the shellcode's `insmod` is then asked to load them from the path it
+     * names - which is how a chain that patches nothing but a vendor library gets a kernel module loaded.
+     * It is a parameter rather than a constant in the native code because which vendor file exists and
+     * is loadable differs by device: the app picks one (see [UniversalRootRun.chooseKoTarget]), and a
+     * choice made here is one the log can name.
+     *
      * [packageName] is the manager package the daemon is told to serve, and it is per
      * KernelSU: the daemon grants root to whatever this names. It is a parameter rather
      * than a literal in the native code because the chain is one library for every
      * flavour now - a compiled-in `me.weishu.kernelsu` meant a KernelSU-Next run handed
      * its daemon the wrong manager's name, and clap accepts it because to clap the value
-     * is opaque, so nothing failed loudly.
+     * is opaque, so nothing failed loudly. Since the privileged half moved into the
+     * module, this travels *through* it: the shellcode passes `package_name=<manager>`
+     * as an `insmod` parameter, and the module hands it to the daemon.
      *
-     * [softReboot] is the caller's setting rather than a decision made here: a soft
-     * reboot after the module loads is what finishes KernelSU's own start-up, and
-     * whether one happens is the app's `restartAfterRoot`, not this function's.
+     * There is no restart argument any more. The chain used to be told whether to reboot, and could not
+     * act on it - a soft reboot is this app's setting, so the app performs it after a run, the same way
+     * the payload flow does.
      *
      * Returns the native chain's own code: 0 success, 1 the daemon exited with an
      * error, 2 a check failed and the log names it, 3 the patches did not land.
      */
     external fun nativeRunAll(
         reporter: Reporter,
+        koTarget: String,
         encapPort: Int,
         spi: Int,
         aesCbcKey: ByteArray,
@@ -82,6 +92,5 @@ object UniversalRoot {
         icvLen: Int,
         senderPort: Int,
         packageName: String,
-        softReboot: Boolean,
     ): Int
 }

@@ -13,7 +13,7 @@ import android.os.Looper
 /**
  * Signing-key lookup for app_process-as-root ([InjectMain]), where there is
  * no app Context. Builds the framework System Context in-process and reads
- * signatures through PackageManager v1/v2/v3 agnostic, no hand parsing,
+ * signatures through PackageManager — v1/v2/v3 agnostic, no hand parsing,
  * no cert.b64 sidecar, no v1-only PKCS#7 fallback.
  *
  * Context creation mirrors what system_server itself does at startup:

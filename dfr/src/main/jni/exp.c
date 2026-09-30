@@ -398,7 +398,7 @@ static int do_one_write(int file_fd, off_t offset, uint32_t spi, int use_helper)
         }
     }
     s = splice(pfd[0], NULL, sk_send, NULL, 24 + 16, SPLICE_F_MOVE);
-    /* still proceed regardless of splice rc kernel may have already
+    /* still proceed regardless of splice rc — kernel may have already
      * decrypted the page in the time between splice and recv */
     // we may not need this.
     // usleep(150 * 1000);
@@ -783,76 +783,6 @@ int patch_ko(struct Reporter *reporter) {
     return ret;
 }
 
-JNIEXPORT jint JNICALL
-Java_org_lsposed_lspromise_DirtyFrag_patchMod(JNIEnv *env, jclass clazz) {
-    LOGI("starting patchMod uid=%d", getuid());
-    /*
-    int fd = open(kCrashDump, O_RDONLY);
-    LOGD("leaked crashdump32 fd %d", fd);
-    struct stat st;
-    fstat(fd, &st);
-    LOGD("mmap sz %zu", st.st_size);
-    void *addr = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    LOGD("mmap addr %p", addr);*/
-
-    pid_t cpid = fork();
-    if (cpid < 0) return 1;
-
-    if (cpid == 0) {
-        int rc = patch_ko(NULL);
-        _exit(rc == 0 ? 0 : 2);
-    }
-    int cstatus;
-    waitpid(cpid, &cstatus, 0);
-    if (!WIFEXITED(cstatus) || WEXITSTATUS(cstatus) != 0) {
-        LOGE("corruption stage failed (status=0x%x)", cstatus);
-        return 1;
-    }
-
-    LOGI("page-cache patched");
-    return 0;
-}
-
-JNIEXPORT jint JNICALL
-Java_org_lsposed_lspromise_DirtyFrag_patchLibc(JNIEnv *env, jclass clazz) {
-    LOGI("starting patchLibc uid=%d", getuid());
-    pid_t cpid = fork();
-    if (cpid < 0) return 1;
-    if (cpid == 0) {
-        int rc = patch_libc(NULL);
-        _exit(rc == 0 ? 0 : 2);
-    }
-    int cstatus;
-    waitpid(cpid, &cstatus, 0);
-    if (!WIFEXITED(cstatus) || WEXITSTATUS(cstatus) != 0) {
-        LOGE("corruption stage failed (status=0x%x)", cstatus);
-        return 1;
-    }
-
-    LOGI("page-cache patched");
-    return 0;
-}
-
-JNIEXPORT jint JNICALL
-Java_org_lsposed_lspromise_DirtyFrag_patchCxx(JNIEnv *env, jclass clazz) {
-    LOGI("starting patchCxx uid=%d", getuid());
-    pid_t cpid = fork();
-    if (cpid < 0) return 1;
-    if (cpid == 0) {
-        int rc = patch_cxx(0, NULL);
-        _exit(rc == 0 ? 0 : 2);
-    }
-    int cstatus;
-    waitpid(cpid, &cstatus, 0);
-    if (!WIFEXITED(cstatus) || WEXITSTATUS(cstatus) != 0) {
-        LOGE("corruption stage failed (status=0x%x)", cstatus);
-        return 1;
-    }
-
-    LOGI("page-cache patched");
-    return 0;
-}
-
 static int createOrphanProcess() {
 
     int pid = fork();
@@ -873,11 +803,6 @@ static int createOrphanProcess() {
         TEMP_FAILURE_RETRY(waitpid(pid, NULL, 0));
     }
     return 0;
-}
-
-JNIEXPORT jint JNICALL
-Java_org_lsposed_lspromise_DirtyFrag_createOrphanProcess(JNIEnv *env, jclass clazz) {
-    return createOrphanProcess();
 }
 
 static int has_mutex() {

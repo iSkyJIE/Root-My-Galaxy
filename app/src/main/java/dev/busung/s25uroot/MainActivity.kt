@@ -99,6 +99,7 @@ import androidx.compose.material.icons.rounded.DownloadForOffline
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Difference
 import androidx.compose.material.icons.rounded.MenuBook
@@ -3315,6 +3316,16 @@ private fun HistoryPage(
                 onEntryClick = { selectedHistoryId = it.id },
                 onDeleteSelected = { deleteWithUndo(selectionIds) },
                 onExportSelected = { launchExport(selectionIds) },
+                // Every run, not the filtered ones: the button says the *history* is being cleared, and a
+                // filter is a way of reading a list rather than a smaller list. It goes through the same
+                // delete as a single row, so it is held before it goes and offers the same undo - and the
+                // message it shows counts what actually went, which is how a clear taken under a filter
+                // still says forty rather than two.
+                //
+                // What it cannot remove is the run writing its own record: the store's delete refuses the
+                // entry in flight, so a clear tapped from a run's own history row does not take the row's
+                // account away while the run is still making it.
+                onClearAll = { deleteWithUndo(history.map { it.id }.toSet()) },
             )
         } else {
             HistoryDetail(
@@ -3345,6 +3356,8 @@ private fun HistoryList(
     onEntryClick: (InstallHistoryEntry) -> Unit,
     onDeleteSelected: () -> Unit,
     onExportSelected: () -> Unit,
+    /** Removes every run this history holds, whatever the filters are showing. */
+    onClearAll: () -> Unit,
 ) {
     val view = LocalView.current
     val selecting = selectionIds.isNotEmpty()
@@ -3389,6 +3402,28 @@ private fun HistoryList(
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    // The whole list, when nothing is selected. It sits where the selection's own controls sit
+                    // and never beside them: the two answer the same question about the same list, and a
+                    // screen that offered "select some" and "remove all" at once would be inviting the second
+                    // to be tapped while the first is being answered.
+                    AnimatedVisibility(
+                        visible = !selecting && totalRuns > 0,
+                        enter = fadeIn() + scaleIn(initialScale = 0.9f),
+                        exit = fadeOut() + scaleOut(targetScale = 0.9f),
+                    ) {
+                        IconButton(onClick = {
+                            clickHaptic(view)
+                            onClearAll()
+                        }) {
+                            Icon(
+                                Icons.Rounded.DeleteSweep,
+                                // The count is in the description because that is the one thing this button
+                                // cannot show: a filter can leave two rows on screen over forty runs, and the
+                                // tap removes forty.
+                                contentDescription = stringResource(R.string.history_clear_all),
                             )
                         }
                     }

@@ -1239,6 +1239,9 @@ Hold Power and Volume Down together for 7 seconds to Reboot it from there.</stri
     <string name="updater_up_to_date">You\'re up to date</string>
     <string name="updater_failed">Couldn\'t check for updates</string>
     <string name="history_delete">Delete</string>
+    <!-- The button that empties the list. It removes every run the history holds rather than the ones a
+         filter is showing, which is why it is worded about the history and not about the list. -->
+    <string name="history_clear_all">Clear run history</string>
     <string name="history_select_all">Select all</string>
     <string name="history_clear_selection">Clear selection</string>
     <string name="history_delete_selected">Delete (%1$d)</string>

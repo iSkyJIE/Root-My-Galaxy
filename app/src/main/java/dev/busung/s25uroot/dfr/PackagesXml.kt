@@ -182,7 +182,7 @@ object PackagesXml {
     /**
      * Effective hex key of one <cert> element (inline `key=`, else the
      * encounter-order table at its index). Null when unresolvable
-     * (dangling index, non-hex inline key) PMS drops such certs too.
+     * (dangling index, non-hex inline key) — PMS drops such certs too.
      */
     fun effectiveKey(cert: Element, table: List<String?>): String? {
         val inline = cert.getAttribute("key")
@@ -191,26 +191,6 @@ object PackagesXml {
         }
         val idx = cert.getAttribute("index").toIntOrNull() ?: return null
         return if (idx >= 0 && idx < table.size) table[idx] else null
-    }
-
-    /**
-     * Returns (keyHex, index) of our own <cert> from our <package> node, or
-     * null. Resolves inline-key and index-only (table-resolved) refs alike —
-     * the latter happens whenever another package with the same key bytes
-     * was serialized earlier (same-signing-key apps dedup to one slot).
-     */
-    fun findInstalledKey(doc: Document, ownPkg: String): Pair<String, String>? {
-        val table = resolveKeyTable(doc)
-        val pkgs = doc.getElementsByTagName("package")
-        for (i in 0 until pkgs.length) {
-            val el = pkgs.item(i) as? Element ?: continue
-            if (el.getAttribute("name") != ownPkg) continue
-            val sigs = child(el, "sigs") ?: return null
-            val cert = child(sigs, "cert") ?: return null
-            val resolved = effectiveKey(cert, table) ?: return null
-            return resolved to cert.getAttribute("index").ifEmpty { "0" }
-        }
-        return null
     }
 
     /**
@@ -529,7 +509,7 @@ object PackagesXml {
         // a rollback that lands as root:root 0644 is a second failure on top of the one it is undoing.
         applyPerms(bak.absolutePath, wantMode, wantUid, wantGid, log)
         // Write strategy: direct overwrite first (works where the inode
-        // allows it), then rename swap. NOTE: no setenforce games EPERM was
+        // allows it), then rename swap. NOTE: no setenforce games — EPERM was
         // observed even with SELinux fully Permissive, so this is not a MAC
         // denial (likely file-level protection); rename(2) walks a different
         // vector (new-file create is allowed) and succeeds.
