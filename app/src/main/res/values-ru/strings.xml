@@ -119,8 +119,6 @@
     <string name="action_continue">Всё равно продолжить</string>
     <string name="action_next">Далее</string>
     <string name="advanced">Дополнительно</string>
-    <string name="advanced_mode">Расширенный режим</string>
-    <string name="advanced_mode_description">Выбрать совместимый с устройством payload вручную во время установки</string>
     <string name="shizuku_mode">Использовать Shizuku</string>
     <string name="shizuku_mode_description">Использовать Shizuku для запуска payload. Это может повысить надёжность.</string>
     <string name="shizuku_not_running_title">Shizuku не запущен</string>
@@ -145,7 +143,7 @@
     <string name="show_my_device_only">Показывать только моё устройство</string>
     <string name="no_matching_devices">Для этой модели и версии ядра не найдено подходящих payload-файлов.</string>
     <string name="device_mismatch_title">Несовместимое устройство</string>
-    <string name="device_mismatch_body">Модель этого телефона — %1$s, однако выбранный payload предназначен для %2$s. Его запуск может привести к сбою или повреждению устройства.</string>
+    <string name="device_mismatch_body">Модель этого телефона %1$s, однако выбранный payload предназначен для %2$s. Его запуск может привести к сбою или повреждению устройства.</string>
     <string name="kernel_version_mismatch_title">Несовместимая версия ядра</string>
     <string name="kernel_version_mismatch_body">На этом телефоне используется ядро %1$s, однако выбранный payload поддерживает %2$s. offsets могут быть несовместимы.</string>
     <string name="about">О приложении</string>

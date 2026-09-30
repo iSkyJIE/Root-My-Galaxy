@@ -232,46 +232,49 @@ data class SupportManifest(
         private fun JSONArray.strings(): Set<String> = buildSet {
             for (index in 0 until length()) add(getString(index))
         }
-
-        /**
-         * The flavour an entry declares, the default when it declares none, and null when it names one
-         * this build does not know.
-         *
-         * An unknown id is never read as the default: a manifest that says `"flavor": "kernel-su"`
-         * was written for something, and installing the other project's module because the name looked
-         * close is the one outcome that cannot be explained afterwards. What the caller does with null
-         * is drop that entry and say so - see [parse].
-         */
-        private fun JSONObject.flavorOrNull(): KernelSuFlavor? {
-            val declared = optString("flavor").trim()
-            if (declared.isEmpty()) return KernelSuFlavor.Default
-            return KernelSuFlavor.fromId(declared)
-        }
-
-        /** Reads one artifact. Both artifacts of a payload take the same optional fields. */
-        private fun JSONObject.artifact(): RemoteArtifact = RemoteArtifact(
-            url = getString("url"),
-            size = getLong("size"),
-            verifySize = optBoolean("verifySize", true),
-            sha256 = optString("sha256").trim().takeIf(String::isNotEmpty),
-        )
-
-        /**
-         * The release a `kernelsu` block declares, with the tag's own `v` taken off.
-         *
-         * It used to be read through [releaseOf], which reduced every value to its dotted number, and
-         * that turned out to be lossy for a project whose releases are pre-releases: ReSukiSU publishes
-         * `v4.2.0-rc2`, there is no `v4.2.0` to look up, and the daemon the feed serves is built from
-         * the `rc2` tag. The suffix is therefore part of the release's name and kept, while the leading
-         * `v` is dropped so a feed writing the tag (`v3.4.0`) and one writing the version (`3.4.0`) are
-         * still the same value here - this is compared against a manager's own `versionName` and against
-         * the flavour's built-in default, and both of those name the release the same way the tag does.
-         */
-        private fun JSONObject.declaredVersion(): String? {
-            val declared = optString("version").trim().takeIf(String::isNotEmpty) ?: return null
-            return declared.removePrefix("v").removePrefix("V").trim().ifEmpty { declared }
-        }
     }
+}
+
+/**
+ * The flavour an entry declares, the default when it declares none, and null when it names one this
+ * build does not know.
+ *
+ * An unknown id is never read as the default: a manifest that says `"flavor": "kernel-su"` was written
+ * for something, and installing the other project's module because the name looked close is the one
+ * outcome that cannot be explained afterwards. What the caller does with null is drop that entry and
+ * say so - see [SupportManifest.parse] and [GenericDaemonFeed.parse].
+ *
+ * Top level rather than private to `SupportManifest`, because the generic daemon feed declares a flavour
+ * the same way and the two must agree about what a name means.
+ */
+internal fun JSONObject.flavorOrNull(): KernelSuFlavor? {
+    val declared = optString("flavor").trim()
+    if (declared.isEmpty()) return KernelSuFlavor.Default
+    return KernelSuFlavor.fromId(declared)
+}
+
+/** Reads one artifact. Every artifact in every feed takes the same optional fields. */
+internal fun JSONObject.artifact(): RemoteArtifact = RemoteArtifact(
+    url = getString("url"),
+    size = getLong("size"),
+    verifySize = optBoolean("verifySize", true),
+    sha256 = optString("sha256").trim().takeIf(String::isNotEmpty),
+)
+
+/**
+ * The release an entry declares, with the tag's own `v` taken off.
+ *
+ * It used to be read through `releaseOf`, which reduced every value to its dotted number, and that
+ * turned out to be lossy for a project whose releases are pre-releases: ReSukiSU publishes `v4.2.0-rc2`,
+ * there is no `v4.2.0` to look up, and the daemon the feed serves is built from the `rc2` tag. The
+ * suffix is therefore part of the release's name and kept, while the leading `v` is dropped so a feed
+ * writing the tag (`v3.4.0`) and one writing the version (`3.4.0`) are still the same value here - this
+ * is compared against a manager's own `versionName` and against the flavour's built-in default, and both
+ * of those name the release the same way the tag does.
+ */
+internal fun JSONObject.declaredVersion(): String? {
+    val declared = optString("version").trim().takeIf(String::isNotEmpty) ?: return null
+    return declared.removePrefix("v").removePrefix("V").trim().ifEmpty { declared }
 }
 
 /**

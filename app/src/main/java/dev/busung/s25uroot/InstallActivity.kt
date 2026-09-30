@@ -53,7 +53,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -64,7 +63,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -100,6 +98,23 @@ class InstallActivity : ComponentActivity() {
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val selectionId = intent.getStringExtra(EXTRA_PROFILE_ID)
+        // The universal root, asked for as one extra on this screen rather than as a second screen beside
+        // it: it is a run with the same four steps and the same log, and the whole point of a shared run
+        // screen is that a person learns one of them. Taken off the intent like the request below, because
+        // a run is not something to repeat because the screen was turned.
+        val universal = savedInstanceState == null && intent.getBooleanExtra(EXTRA_UNIVERSAL, false)
+        // Which KernelSU that run installs, as the answer the card asked for. An absent or unreadable flavour
+        // falls back to the app's setting rather than refusing: a launch from somewhere that does not know
+        // about flavours is still a request to root this phone.
+        val universalFlavor = intent.getStringExtra(EXTRA_UNIVERSAL_FLAVOR)
+        // Which payload that run stages, as the answer the card's second question gave. Read on the same
+        // terms: an absent or unreadable tier falls back to the device's own payload, which is the tier that
+        // refuses rather than the one that loads something built for another phone.
+        val universalTier = PayloadTier.fromId(intent.getStringExtra(EXTRA_UNIVERSAL_TIER).orEmpty())
+            ?: PayloadTier.Device
+        intent.removeExtra(EXTRA_UNIVERSAL)
+        intent.removeExtra(EXTRA_UNIVERSAL_FLAVOR)
+        intent.removeExtra(EXTRA_UNIVERSAL_TIER)
         // Taken off the intent for the same reason the install request is, and read once: a tap on a run
         // notification names the run it was about, and what this screen can do with that name does not
         // change while it is open.
@@ -161,9 +176,14 @@ class InstallActivity : ComponentActivity() {
                     startActivity(runRecordIntent(this@InstallActivity, wanted))
                     finish()
                 }
-                LaunchedEffect(startInstall, selectionId, answer) {
+                LaunchedEffect(startInstall, universal, universalFlavor, universalTier, selectionId, answer) {
                     when {
                         answer != null -> startAnsweredRun(answer, selectionId)
+                        universal -> installViewModel.startUniversalRun(
+                            KernelSuFlavor.fromId(universalFlavor)
+                                ?: AppPreferences.kernelsuFlavor(this@InstallActivity),
+                            universalTier,
+                        )
                         startInstall -> installViewModel.install(selectionId)
                     }
                 }
@@ -210,6 +230,7 @@ class InstallActivity : ComponentActivity() {
                             }
                         },
                         onRebootAndRetry = { installViewModel.armRetryAfterReboot() },
+                        onRebootAndRetryUniversal = { installViewModel.armUniversalRetryAfterReboot() },
                         onClose = ::finish,
                         onOpenSetting = ::openSettingsCard,
                     )
@@ -255,12 +276,48 @@ class InstallActivity : ComponentActivity() {
         )
     }
 
+    /**
+     * A launch into an instance that is already open, which is how a second tap on the card arrives.
+     *
+     * `onCreate` reads the extra once, and an activity brought back to the front is not created again - so
+     * without this, tapping the universal root on a phone where the install screen was already in the task
+     * opened the *regular* run screen with the payload flow's steps and its probe, and nothing said why. The
+     * install request avoids the same trap with a consumed token; this extra is simpler and only ever means
+     * "start the universal root", so it is read here as well and removed.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (!intent.getBooleanExtra(EXTRA_UNIVERSAL, false)) return
+        val flavor = KernelSuFlavor.fromId(intent.getStringExtra(EXTRA_UNIVERSAL_FLAVOR))
+            ?: AppPreferences.kernelsuFlavor(this)
+        val tier = PayloadTier.fromId(intent.getStringExtra(EXTRA_UNIVERSAL_TIER).orEmpty())
+            ?: PayloadTier.Device
+        intent.removeExtra(EXTRA_UNIVERSAL)
+        intent.removeExtra(EXTRA_UNIVERSAL_FLAVOR)
+        intent.removeExtra(EXTRA_UNIVERSAL_TIER)
+        installViewModel.startUniversalRun(flavor, tier)
+    }
+
     companion object {
         const val EXTRA_INSTALL_REQUEST_ID = "install_request_id"
         const val EXTRA_PROFILE_ID = "profile_id"
 
         /** One of [RunAnswer]'s extras: what a boot notification's answer asked for. */
         const val EXTRA_RUN_ANSWER = "run_answer"
+
+        /**
+         * Asks this screen for the universal root instead of a payload run.
+         *
+         * One boolean and no other state: the run needs nothing from the app that it cannot read itself, and
+         * a screen opened with this set is the same screen - same steps, same bar, same Stop.
+         */
+        const val EXTRA_UNIVERSAL = "universal_root"
+
+        /** Which KernelSU that run installs, by [KernelSuFlavor.id]: the answer the card asked for. */
+        const val EXTRA_UNIVERSAL_FLAVOR = "universal_root_flavor"
+
+        /** Which payload it stages, by [PayloadTier.name]: the card's second answer. */
+        const val EXTRA_UNIVERSAL_TIER = "universal_root_tier"
     }
 }
 
@@ -284,6 +341,27 @@ internal val installerSteps = listOf(
     InstallerStep(R.string.step_ksu_title, R.string.step_ksu_detail, Icons.Rounded.VerifiedUser),
 )
 
+/**
+ * The same four steps, worded for the run that fetches nothing.
+ *
+ * Only the two steps whose payload-run text would be wrong are changed: the check is the same check, and the
+ * last step is the same load. `Download` becomes the one step that both resolves and stages - this run picks
+ * a payload before it fetches anything, which a payload run never does - and `Kernel exploit` says "Get
+ * temporary root" on a path whose whole point is that no temporary root is involved. A step list that
+ * describes a different run than the one happening is worse than no step list, because it reads as the run
+ * being further along than it is.
+ */
+internal val universalInstallerSteps = listOf(
+    InstallerStep(R.string.step_support_title, R.string.step_support_detail_universal, Icons.Rounded.FactCheck),
+    InstallerStep(
+        R.string.step_daemon_title,
+        R.string.step_daemon_detail,
+        Icons.Rounded.CloudDownload,
+    ),
+    InstallerStep(R.string.step_exploit_title, R.string.step_exploit_detail_universal, Icons.Rounded.Memory),
+    InstallerStep(R.string.step_ksu_title, R.string.step_ksu_detail_universal, Icons.Rounded.VerifiedUser),
+)
+
 @Composable
 private fun InstallScreen(
     installState: InstallUiState,
@@ -300,6 +378,14 @@ private fun InstallScreen(
     onStop: () -> Unit,
     /** Arms one retry for the next boot and reboots; reports whether the reboot was requested. */
     onRebootAndRetry: suspend () -> Boolean,
+    /**
+     * The same answer for the universal root, which arms a run of *that* flow rather than the payload gate's.
+     *
+     * Two callbacks rather than one because they arm two different things. The one above arms the payload
+     * flow's boot gate - a cached payload, a Shizuku promise, the regular steps - so a universal failure
+     * offering it would arm a payload install, which is the one thing keeping the two flows apart is for.
+     */
+    onRebootAndRetryUniversal: suspend () -> Boolean,
     onClose: () -> Unit,
     /** Opens a settings card by its target, for the one failure whose fix is a switch in this app. */
     onOpenSetting: (String) -> Unit,
@@ -309,6 +395,9 @@ private fun InstallScreen(
     val pageScrollState = rememberScrollState()
     val view = LocalView.current
     var showRetryChoice by remember { mutableStateOf(false) }
+    // For the bar's one answer that is not instantaneous: arming a retry for the next boot writes a preference
+    // and asks the system for a restart, so it is a suspend call rather than a tap handler.
+    val scope = rememberCoroutineScope()
     // Whether a reboot was *asked for*, which is all the app can know: null while nothing has been
     // asked, false when the phone would not take the request.
     var retryNotice by remember { mutableStateOf<Boolean?>(null) }
@@ -378,35 +467,52 @@ private fun InstallScreen(
                         // for a followed run: that flag is in the process running it, and a button that
                         // cannot reach it is worse than no button.
                         if (installState.phase == InstallPhase.Settling && !followed) {
-                            FilledTonalButton(
-                                onClick = {
+                            AppActionButton(
+                                AppAction(
+                                    label = R.string.action_run_now,
+                                    // The recommendation of the pair while the wait runs: cutting it short
+                                    // is what someone who came back to this screen wants, and the one
+                                    // answer beside it is the way out.
+                                    role = AppActionRole.Priority,
+                                ) {
                                     clickHaptic(view)
                                     onSkipBootSettle()
                                 },
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text(stringResource(R.string.action_run_now))
-                            }
+                                Modifier.weight(1f),
+                            )
                         }
                         // Offered for the whole run rather than only while it is busy elsewhere: it is the one
                         // way out of a run that has hung, since back is disabled for the length of one and
                         // nothing else on the screen can be pressed.
                         if (installState.busy) {
-                            FilledTonalButton(
-                                onClick = {
+                            AppActionButton(
+                                AppAction(
+                                    label = R.string.action_stop_run,
+                                    // The error colours, because stopping takes the run away - which is the
+                                    // one thing a role here says about what an answer does rather than how
+                                    // much the screen wants it. For most of a run this is the only control
+                                    // in the bar, so there is nothing for it to be the loud one against:
+                                    // filled primary would read as "carry on", which is the opposite of it.
+                                    role = AppActionRole.Destructive,
+                                ) {
                                     clickHaptic(view)
                                     onStop()
                                 },
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text(stringResource(R.string.action_stop_run))
-                            }
+                                Modifier.weight(1f),
+                            )
                         }
                         if (!installState.busy) {
                             val waiting = waitRemaining
                             when {
                                 // The countdown and its two answers in the bar itself, because that is where
                                 // the answers are: as a card it was a second surface inside this one.
+                                //
+                                // All three carry the same weight, which is the rule every other row in this
+                                // bar already followed - and the only row that did not. The two answers used to
+                                // wrap their own labels while the sentence beside them took what was left, so
+                                // the row read as one message with two footnotes instead of three things each
+                                // given a third of it. A label wraps to two lines rather than eliding, so the
+                                // ones that are tight here - "Stop waiting" is the longest - stay readable.
                                 waiting != null -> {
                                     Text(
                                         text = stringResource(R.string.retry_waiting_body, waiting),
@@ -414,39 +520,75 @@ private fun InstallScreen(
                                         color = MaterialTheme.colorScheme.onSurface,
                                         modifier = Modifier.weight(1f),
                                     )
-                                    TextButton(onClick = {
-                                        clickHaptic(view)
-                                        waitRemaining = null
-                                    }) {
-                                        Text(stringResource(R.string.retry_waiting_cancel))
-                                    }
-                                    Button(onClick = {
-                                        clickHaptic(view)
-                                        waitRemaining = null
-                                        onRetry()
-                                    }) {
-                                        Text(stringResource(R.string.retry_waiting_start))
-                                    }
+                                    AppActionButton(
+                                        AppAction(R.string.retry_waiting_cancel) {
+                                            clickHaptic(view)
+                                            waitRemaining = null
+                                        },
+                                        Modifier.weight(1f),
+                                    )
+                                    AppActionButton(
+                                        AppAction(
+                                            label = R.string.retry_waiting_start,
+                                            role = AppActionRole.Priority,
+                                        ) {
+                                            clickHaptic(view)
+                                            waitRemaining = null
+                                            onRetry()
+                                        },
+                                        Modifier.weight(1f),
+                                    )
                                 }
                                 installState.phase == InstallPhase.Failed ||
                                     installState.phase == InstallPhase.Stopped -> {
-                                    FilledTonalButton(
-                                        onClick = {
+                                    // A universal run gets Close and nothing else, and it is the loud answer for
+                                    // it because it is the only one. The retry beside it belongs to the payload
+                                    // flow: its answers are "retry in this boot", which *runs the payload
+                                    // install*, and "reboot and retry", which arms one for the boot gate. A
+                                    // failure of the universal root offering those is one flow's control
+                                    // starting the other flow's run - which is what it did.
+                                    //
+                                    // It is also a retry that cannot work here. The chain arms a marker only a
+                                    // reboot clears, and the run refuses itself while that marker is up, so a
+                                    // retry offered in this boot would be pressed and then refused.
+                                    val universalRun = installState.kind == RunKind.Universal
+                                    AppActionButton(
+                                        AppAction(R.string.action_close) {
                                             clickHaptic(view)
                                             onClose()
                                         },
-                                        modifier = Modifier.weight(1f),
-                                    ) {
-                                        Text(stringResource(R.string.action_close))
-                                    }
-                                    Button(
-                                        onClick = {
-                                            clickHaptic(view)
-                                            showRetryChoice = true
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                    ) {
-                                        Text(stringResource(R.string.action_retry))
+                                        Modifier.weight(1f),
+                                    )
+                                    if (universalRun) {
+                                        // This flow's own retry, and it works where the payload flow's would
+                                        // not: a restart clears the marker the chain arms only for a reboot to
+                                        // clear, and the boot gate then runs the plan the failed run recorded -
+                                        // the same KernelSU and the same payload tier, from the same settings.
+                                        //
+                                        // What is *not* reported here is whether the restart was taken: the
+                                        // arming is what matters and it has already happened by the time this
+                                        // returns, and the run's own log is where the two are told apart.
+                                        AppActionButton(
+                                            AppAction(
+                                                label = R.string.retry_after_reboot,
+                                                role = AppActionRole.Priority,
+                                            ) {
+                                                clickHaptic(view)
+                                                scope.launch { onRebootAndRetryUniversal() }
+                                            },
+                                            Modifier.weight(1f),
+                                        )
+                                    } else {
+                                        AppActionButton(
+                                            AppAction(
+                                                label = R.string.action_retry,
+                                                role = AppActionRole.Priority,
+                                            ) {
+                                                clickHaptic(view)
+                                                showRetryChoice = true
+                                            },
+                                            Modifier.weight(1f),
+                                        )
                                     }
                                 }
                                 else -> {
@@ -458,19 +600,35 @@ private fun InstallScreen(
                                     if (installState.phase == InstallPhase.Installed) {
                                         RecoveryActionButton(
                                             tool = RecoveryTool.SoftReboot,
-                                            label = stringResource(R.string.install_load_modules),
+                                            // The label, not the sentence: the answer button resolves its
+                                            // own label, so every answer in the app is one resource.
+                                            label = R.string.install_load_modules,
+                                            // The loud one, which no other use of this button is: the row has
+                                            // two answers and this is the one that finishes what the run
+                                            // started. The restart is what puts the freshly mounted modules
+                                            // into a Zygote, while the answer beside it only leaves the screen -
+                                            // so leaving both quiet made the row two equally optional things
+                                            // and the step that completes the job indistinguishable from the
+                                            // way out.
+                                            role = AppActionRole.Priority,
                                             modifier = Modifier.weight(1f),
                                             onOpenSetting = onOpenSetting,
                                         )
                                     }
-                                    // Quiet rather than filled: the restart above is the step that finishes a
-                                    // load, and this is only the way out of the screen.
-                                    TextButton(onClick = {
-                                        clickHaptic(view)
-                                        onClose()
-                                    }) {
-                                        Text(stringResource(R.string.action_done))
-                                    }
+                                    // Quiet rather than filled: the restart beside it is the step that finishes
+                                    // a load, and this is only the way out of the screen.
+                                    AppActionButton(
+                                        AppAction(R.string.action_done) {
+                                            clickHaptic(view)
+                                            onClose()
+                                        },
+                                        // Weighted like its neighbour, so the two share the bar evenly.
+                                        // Unweighted it wrapped its own four-letter label, which drew a
+                                        // footnote-sized pill beside a full-width restart and read as though one
+                                        // of the two answers mattered less than the other - the opposite of
+                                        // what the fills now say.
+                                        Modifier.weight(1f),
+                                    )
                                 }
                             }
                         }
@@ -503,6 +661,7 @@ private fun InstallScreen(
                 phase = installState.phase,
                 failure = installState.failure,
                 stoppedAt = installState.stoppedAt,
+                kind = installState.kind,
             )
             InstallerLog(
                 output = installState.log,
@@ -628,16 +787,16 @@ private fun InstallScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    TextButton(
-                        enabled = !arming,
-                        onClick = {
+                    AppActionButton(
+                        AppAction(
+                            label = R.string.action_cancel,
+                            enabled = !arming,
+                        ) {
                             clickHaptic(view)
                             showRetryChoice = false
                         },
-                        modifier = Modifier.align(Alignment.End),
-                    ) {
-                        Text(stringResource(R.string.action_cancel))
-                    }
+                        Modifier.align(Alignment.End),
+                    )
                 }
             }
         }
@@ -654,12 +813,15 @@ private fun InstallScreen(
                 title = { Text(stringResource(R.string.retry_armed_title)) },
                 text = { Text(stringResource(R.string.retry_armed_body)) },
                 confirmButton = {
-                    TextButton(onClick = {
-                        clickHaptic(view)
-                        retryNotice = null
-                    }) {
-                        Text(stringResource(R.string.action_close))
-                    }
+                    // One answer, so it is the filled one: see [AppDialogActions].
+                    AppDialogActions(
+                        listOf(
+                            AppAction(R.string.action_close, AppActionRole.Priority) {
+                                clickHaptic(view)
+                                retryNotice = null
+                            },
+                        ),
+                    )
                 },
             )
         }
@@ -745,20 +907,29 @@ internal fun RetryOption(
         }
     }
     val padding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+    // The fills come from the shared roles rather than from this file, so an answer that is not the
+    // recommended one looks the same here as it does in every other dialog - see [appActionColors].
+    // What is this screen's own is the size: two lines and a left-aligned label are more than
+    // [AppActionButton] draws, and what the answers are ranked by here is the line each one carries.
     when (emphasis) {
         RetryOptionEmphasis.Primary -> Button(
             onClick = onClick,
             modifier = modifier.fillMaxWidth(),
             enabled = enabled,
             contentPadding = padding,
+            colors = appActionColors(AppActionRole.Priority),
         ) {
             body()
         }
-        RetryOptionEmphasis.Secondary -> FilledTonalButton(
+        // The third tier under this one is this screen's own: [RetryOptionEmphasis.Quiet] is outlined, a
+        // step quieter than the set's floor, because these three answers are the one place in the app
+        // where a third level says something a second one cannot.
+        RetryOptionEmphasis.Secondary -> Button(
             onClick = onClick,
             modifier = modifier.fillMaxWidth(),
             enabled = enabled,
             contentPadding = padding,
+            colors = appActionColors(AppActionRole.Standard),
         ) {
             body()
         }
@@ -876,7 +1047,16 @@ private fun InstallerStatusCard(
 private fun InstallerSteps(
     phase: InstallPhase,
     failure: RunFailure?,
-    stoppedAt: RunStage? = null,
+    stoppedAt: FailureStage? = null,
+    /**
+     * Which flow the run these steps describe is - see [RunKind].
+     *
+     * The four rows are the same four steps either way, so the list is picked here rather than the screen
+     * being forked: what changes is only the wording of a step whose payload-run text would be a lie on this
+     * path - "Download / Load the support list" describes a run that fetches a support list, where the
+     * universal root stages a daemon.
+     */
+    kind: RunKind = RunKind.Payload,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -889,7 +1069,7 @@ private fun InstallerSteps(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            installerSteps.forEachIndexed { index, step ->
+            (if (kind == RunKind.Universal) universalInstallerSteps else installerSteps).forEachIndexed { index, step ->
                 val stepState = installerStepState(phase, index, failure?.stage ?: stoppedAt)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -976,6 +1156,10 @@ private fun InstallerLog(
 ) {
     val context = LocalContext.current
     val view = LocalView.current
+    // Wrapped, elided and de-ticked on the way to the screen, and nowhere else: the copy button below takes
+    // the raw text, which is what a bug report wants - see [formatLogForDisplay]. Memoised on the log so the
+    // pass runs once per appended line rather than once per frame.
+    val display = remember(output) { formatLogForDisplay(output) }
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
@@ -1008,7 +1192,7 @@ private fun InstallerLog(
             }
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 Text(
-                    text = output.ifBlank { stringResource(R.string.install_preparing) },
+                    text = display ?: stringResource(R.string.install_preparing),
                     modifier = Modifier
                         .fillMaxWidth()
                         .verticalScroll(scrollState),
@@ -1119,40 +1303,44 @@ private fun ShizukuHoldDialog(
             }
         },
         confirmButton = {
-            TextButton(
-                enabled = !prompt.starting,
-                onClick = {
-                    clickHaptic(view)
-                    onStartShizuku()
-                },
-            ) {
-                if (prompt.starting) {
-                    LoadingIndicator(modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
-                }
-                Text(
-                    stringResource(
-                        if (prompt.starting) R.string.status_shizuku_starting else R.string.settings_shizuku_start,
-                    ),
-                )
-            }
+            // The same set shape every other screen asks with. This dialog is where the set grew its
+            // progress slot: its first answer starts something that can take a minute, and the spinner
+            // saying so used to be hand-built here - which is why this was the one question in the app
+            // whose buttons did not look like the app's.
+            AppDialogActions(
+                listOf(
+                    AppAction(
+                        label = if (prompt.starting) {
+                            R.string.status_shizuku_starting
+                        } else {
+                            R.string.settings_shizuku_start
+                        },
+                        // The recommended answer, because the run was set up to use Shizuku and this is
+                        // the one that keeps it that way.
+                        role = AppActionRole.Priority,
+                        enabled = !prompt.starting,
+                        progress = prompt.starting,
+                    ) {
+                        clickHaptic(view)
+                        onStartShizuku()
+                    },
+                    AppAction(
+                        label = R.string.action_run_without_shizuku,
+                        // Deliberately live while a start is in flight. An attempt can take a minute on a
+                        // device where it has several routes to try, and disabling the other answer for
+                        // that minute is how this question turns into a screen with nothing to press -
+                        // which is what it looked like when the start was the only thing on offer. The
+                        // view model drops a start that lands after this answer was taken, so changing
+                        // your mind mid-attempt cannot start two runs.
+                        enabled = true,
+                    ) {
+                        clickHaptic(view)
+                        onRunWithoutShizuku()
+                    },
+                ),
+            )
         },
-        dismissButton = {
-            // Deliberately live while a start is in flight. An attempt can take a minute on a device
-            // where it has several routes to try, and disabling the other answer for that minute is how
-            // this question turns into a screen with nothing to press - which is what it looked like
-            // when the start was the only thing on offer. The view model drops a start that lands after
-            // this answer was taken, so changing your mind mid-attempt cannot start two runs.
-            TextButton(
-                enabled = true,
-                onClick = {
-                    clickHaptic(view)
-                    onRunWithoutShizuku()
-                },
-            ) {
-                Text(stringResource(R.string.action_run_without_shizuku))
-            }
-        },
+        dismissButton = null,
     )
 }
 
@@ -1211,7 +1399,7 @@ private val LOG_PANEL_HEIGHT = 280.dp
  * A failure stops at the step it died in rather than dropping back to nothing: an empty bar on a run
  * that reached the kernel exploit threw away the one thing the card could still say about it.
  */
-internal fun installProgress(phase: InstallPhase, failureStage: RunStage?): Float = when (phase) {
+internal fun installProgress(phase: InstallPhase, failureStage: FailureStage?): Float = when (phase) {
     // Nothing has been attempted, so nothing is claimed: the run's own first step is not under way.
     InstallPhase.Probing -> 0f
     InstallPhase.Checking -> 0.1f
@@ -1224,8 +1412,11 @@ internal fun installProgress(phase: InstallPhase, failureStage: RunStage?): Floa
     // Everything that was going to happen happened, and the load was not part of it, so the bar
     // stops short of claiming a step the run was told to skip.
     InstallPhase.RootOnly -> 0.9f
+    // Each stage carries the step it belongs to, so this no longer has to know a vocabulary - and a stage of
+    // the other flow now lands on the right step instead of on whichever payload step happened to share its
+    // place in a `when`.
     InstallPhase.Failed -> failureStage
-        ?.let { reached -> (installerStepForStage(reached) + 1) / installerSteps.size.toFloat() }
+        ?.let { failed -> (failed.stepIndex + 1) / installerSteps.size.toFloat() }
         ?: 0f
     // Stopped where it was stopped, for the same reason a failure is: the bar's job is to say how far
     // the run got, and how far it got is the part with consequences.
@@ -1255,12 +1446,7 @@ internal enum class InstallerStepState {
  * and verifying the control channel is part of loading KernelSU - so the mapping is by step and not by
  * stage.
  */
-internal fun installerStepForStage(stage: RunStage): Int = when (stage) {
-    RunStage.Transport, RunStage.Target -> 0
-    RunStage.Download -> 1
-    RunStage.Exploit -> 2
-    RunStage.KernelSu, RunStage.Verify -> 3
-}
+internal fun installerStepForStage(stage: FailureStage): Int = stage.stepIndex
 
 /**
  * The state of one step.
@@ -1272,7 +1458,7 @@ internal fun installerStepForStage(stage: RunStage): Int = when (stage) {
 internal fun installerStepState(
     phase: InstallPhase,
     stepIndex: Int,
-    failureStage: RunStage? = null,
+    failureStage: FailureStage? = null,
 ): InstallerStepState = when (phase) {
     InstallPhase.Installed -> InstallerStepState.Done
 

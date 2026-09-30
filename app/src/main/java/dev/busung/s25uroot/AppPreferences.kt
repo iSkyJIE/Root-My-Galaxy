@@ -30,11 +30,34 @@ enum class AppThemeMode(val storedValue: String) {
     }
 }
 
+/**
+ * The three gates that would root the next boot, as one value.
+ *
+ * Read and written together by the one action that has to take all of them away: the recovery screen's
+ * reboot-and-unroot clears whatever would bring root back before a reboot it is about to perform, and has to
+ * put back exactly what was there if that reboot is refused. As a set rather than three flags because the
+ * question that action asks is "would the next boot root itself", and because a gate added later must not be
+ * able to miss it. That is also why the restore is not three setter calls: each setter turns the other two
+ * off, so a phone that carried two flags would silently lose one under a button that promised not to.
+ */
+internal data class RootGates(
+    val payload: Boolean,
+    val helper: Boolean,
+    val universal: Boolean,
+) {
+    /** Whether any gate would root the next boot. */
+    val any: Boolean get() = payload || helper || universal
+
+    companion object {
+        /** All three off, which is what a boot nobody has asked to root looks like. */
+        val none = RootGates(payload = false, helper = false, universal = false)
+    }
+}
+
 object AppPreferences {
     private const val PREFERENCES = "appearance"
     private const val ACCENT_COLOR = "accent_color"
     private const val THEME_MODE = "theme_mode"
-    private const val ADVANCED_MODE = "advanced_mode"
     private const val DISABLE_KSU_MODULES = "disable_ksu_modules"
     private const val LOAD_KERNEL_SU = "load_kernel_su"
     private const val KERNEL_SU_FLAVOR = "kernel_su_flavor"
@@ -47,6 +70,10 @@ object AppPreferences {
     private const val BOOT_ROOT_MODE = "boot_root_mode"
     private const val RESTART_AFTER_ROOT = "restart_after_root"
     private const val RETRY_AFTER_REBOOT = "retry_after_reboot_boot"
+    private const val UNIVERSAL_PLAN_FLAVOR = "universal_plan_flavor"
+    private const val UNIVERSAL_PLAN_TIER = "universal_plan_tier"
+    private const val UNIVERSAL_RETRY_BOOT = "universal_retry_boot"
+    private const val UNIVERSAL_BOOT_ROOT = "universal_boot_root"
     private const val SHIZUKU_BOOT_MODE = "shizuku_boot_mode"
     private const val BOOT_SETTLE_SECONDS = "boot_settle_seconds"
     private const val RUN_STALL_SECONDS = "run_stall_seconds"
@@ -56,8 +83,26 @@ object AppPreferences {
     private const val EXPLOIT_OVERRIDE_ATTEMPTS = "exploit_override_attempts"
     private const val EXPLOIT_OVERRIDE_ATTEMPT_TIMEOUT = "exploit_override_attempt_timeout"
     private const val EXPLOIT_OVERRIDE_SLIDE_ROUTE = "exploit_override_slide_route"
+    private const val EXPLOIT_OVERRIDE_P0_WINDOW = "exploit_override_p0_window"
+
+    /**
+     * What the stored p0 window says when the user left it on the payload's own.
+     *
+     * A separate sentinel rather than 0, because 0 is a value the payload accepts and a base of zero
+     * microseconds is a different experiment from not making one. Kept private to this file: nothing
+     * outside it should be able to write a preference that means "chosen" for a value nobody chose.
+     */
+    private const val P0_WINDOW_NOT_CHOSEN = -1
+    // Both boot gates' floor. The key predates the second gate and keeps its name on purpose: see
+    // [bootGateSettleSeconds].
     private const val AUTO_ROOT_SETTLE_SECONDS = "auto_root_settle_seconds"
+    private const val DFR_REROOT_AT_BOOT = "dfr_reroot_at_boot"
+
+    /** The D2 fix: the helper writes Samsung's DMC vault flag on every boot so Odin stays reachable. */
+    private const val DFR_DMC_FIX = "dfr_dmc_fix"
     private const val SHIZUKU_AUTOMATION_TOKEN = "shizuku_automation_token"
+    private const val SCREEN_OFF_DURING_RUN = "screen_off_during_run"
+    private const val GUIDE_ACCEPTED = "guide_accepted"
     private const val PARTITION_READ_ONLY_MODE = "partition_read_only_mode"
     private const val READ_ONLY_PROTECTED_BOOT = "partition_read_only_protected_boot"
     private const val READ_ONLY_PROTECTED_DEVICES = "partition_read_only_protected_devices"
@@ -66,6 +111,16 @@ object AppPreferences {
     private const val PAYLOAD_MODE = "payload_mode"
     private const val BATTERY_PROMPT_SHOWN = "battery_prompt_shown"
     private const val LOCAL_PAYLOAD_NAME = "local_payload_name"
+
+    // When this app performed the two steps of the system-uid flow. Ordering only: each step's own tool
+    // is what says whether it is done, and these are read to answer "and has it rebooted since?".
+    private const val DFR_INJECTED_AT = "dfr_injected_at"
+    private const val DFR_INSTALLED_AT = "dfr_installed_at"
+    // The third one, and it is the same kind of fact: a clean-up changes packages.xml, and Package
+    // Manager reads that file only when it starts - so between the two, the removal is written down and
+    // not yet in force. Recorded when the file was actually changed, which is the one thing the file
+    // itself cannot say afterwards.
+    private const val DFR_KEY_REMOVED_AT = "dfr_key_removed_at"
     private const val PAYLOAD_SOURCES = "payload_sources"
     // Superseded by the source list; read once so an existing selection survives the upgrade.
     private const val LEGACY_PAYLOAD_REPOSITORY = "payload_repository"
@@ -112,8 +167,11 @@ object AppPreferences {
 
     fun payloadSources(context: Context): List<PayloadSource> {
         val stored = prefs(context).getString(PAYLOAD_SOURCES, null)
-        if (stored == null) return listOf(legacyPayloadSource(context))
-        return decodePayloadSources(stored).ifEmpty { listOf(PayloadSource.DEFAULT) }
+        if (stored == null) return defaultPayloadSources(context)
+        // Saved and empty is the same answer as never saved: a list with nothing in it is one the app
+        // could not read a payload from, so the defaults are what it gets rather than a sheet it can only
+        // be rescued from by typing.
+        return decodePayloadSources(stored).ifEmpty { defaultPayloadSources(context) }
     }
 
     fun setPayloadSources(context: Context, sources: List<PayloadSource>) {
@@ -124,14 +182,23 @@ object AppPreferences {
             .apply()
     }
 
-    private fun legacyPayloadSource(context: Context): PayloadSource {
+    /**
+     * The list a device that has not saved one starts from.
+     *
+     * [PayloadSource.DEFAULTS] with the older single-repository preference folded in: a build before the
+     * list stored one repository and one branch, and a device that set them did so on purpose, so that
+     * source keeps its place at the front. The official catalog is added beside it rather than in place of
+     * it - the defaults are what a device starts from, not what it is forced back to.
+     */
+    private fun defaultPayloadSources(context: Context): List<PayloadSource> {
         val preferences = prefs(context)
-        val repository = preferences.getString(LEGACY_PAYLOAD_REPOSITORY, null)
-        val branch = preferences.getString(LEGACY_PAYLOAD_BRANCH, null)
-        return PayloadSource.create(
-            repository = repository ?: PayloadSource.DEFAULT_REPOSITORY,
-            branch = branch ?: PayloadSource.DEFAULT_BRANCH,
+        val chosen = PayloadSource.create(
+            repository = preferences.getString(LEGACY_PAYLOAD_REPOSITORY, null)
+                ?: PayloadSource.DEFAULT_REPOSITORY,
+            branch = preferences.getString(LEGACY_PAYLOAD_BRANCH, null)
+                ?: PayloadSource.DEFAULT_BRANCH,
         ) ?: PayloadSource.DEFAULT
+        return listOf(chosen).withSourcesAdded(PayloadSource.DEFAULTS)
     }
 
     private fun encodePayloadSources(sources: List<PayloadSource>): String {
@@ -190,15 +257,6 @@ object AppPreferences {
     fun setThemeMode(context: Context, themeMode: AppThemeMode) {
         prefs(context).edit()
             .putString(THEME_MODE, themeMode.storedValue)
-            .apply()
-    }
-
-    fun advancedMode(context: Context): Boolean =
-        prefs(context).getBoolean(ADVANCED_MODE, false)
-
-    fun setAdvancedMode(context: Context, enabled: Boolean) {
-        prefs(context).edit()
-            .putBoolean(ADVANCED_MODE, enabled)
             .apply()
     }
 
@@ -347,22 +405,133 @@ object AppPreferences {
     fun bootRootMode(context: Context): Boolean =
         prefs(context).getBoolean(BOOT_ROOT_MODE, false)
 
+    /**
+     * Turns the payload's boot gate on or off, and the helper's gate off with it.
+     *
+     * The two are alternatives, not companions - see [rerootAtBoot] - so switching this one on switches
+     * the other one off. Only on the way on: turning this gate off says nothing about the other, and the
+     * recovery flow below relies on that when it puts this one back after a reboot it could not make.
+     */
     fun setBootRootMode(context: Context, enabled: Boolean) {
+        val editor = prefs(context).edit().putBoolean(BOOT_ROOT_MODE, enabled)
+        if (enabled) {
+            editor.putBoolean(DFR_REROOT_AT_BOOT, false)
+            editor.putBoolean(UNIVERSAL_BOOT_ROOT, false)
+        }
+        editor.apply()
+    }
+
+    /**
+     * Whether a boot with no root should ask the stage-two helper to reroot.
+     *
+     * Off by default, and the other way a boot can be asked to gain root: root on boot loads the payload
+     * this app would load from the payload sheet, while this one starts the helper - which is the phone
+     * this setting exists for, where the KernelSU in the kernel comes from the exploit the helper runs.
+     * They are alternatives rather than companions even so, because both are unattended and both decide
+     * what a boot with no root does: with both on, one boot is two runs racing for the same kernel, and
+     * which of them wins is whichever reads the boot first. So each setter turns the other gate off, and a
+     * boot has exactly one answer to what it should do about root.
+     */
+    fun rerootAtBoot(context: Context): Boolean =
+        prefs(context).getBoolean(DFR_REROOT_AT_BOOT, false)
+
+    /**
+     * Turns the helper's boot gate on or off, and the payload's gate off with it when this one comes on.
+     */
+    fun setRerootAtBoot(context: Context, enabled: Boolean) {
+        val editor = prefs(context).edit().putBoolean(DFR_REROOT_AT_BOOT, enabled)
+        if (enabled) {
+            editor.putBoolean(BOOT_ROOT_MODE, false)
+            editor.putBoolean(UNIVERSAL_BOOT_ROOT, false)
+        }
+        editor.apply()
+    }
+
+    /**
+     * Whether a boot with no root should root itself with the chain, needing no helper and no shell.
+     *
+     * The third way a boot can be asked for root, and the one that fits this flow best: the payload gate loads
+     * a payload the phone already has and the helper's starts an app, while this one stages the daemon the last
+     * run left behind and drives the exploit from this APK alone - no Shizuku to be running, nothing installed
+     * first. Off by default like the other two.
+     *
+     * It is an alternative to both, not a companion: all three are unattended, they all decide what a boot with
+     * no root does, and the chain the last two run is the same chain - so two of them on is one boot, two runs
+     * racing for one kernel, and the winner being whichever reads the boot first. Each setter turns the other
+     * two off, and a boot has exactly one answer to what it should do about root.
+     *
+     * What it needs to work is a boot's worth of state rather than a switch: the daemon staged by an earlier
+     * run. [UniversalDaemonStore] is that record, and the gate refuses with a sentence when it is missing
+     * instead of resolving a feed a boot may not have.
+     */
+    fun universalBootRoot(context: Context): Boolean =
+        prefs(context).getBoolean(UNIVERSAL_BOOT_ROOT, false)
+
+    /**
+     * Turns the chain's boot gate on or off, and the other two gates off with it when this one comes on.
+     */
+    fun setUniversalBootRoot(context: Context, enabled: Boolean) {
+        val editor = prefs(context).edit().putBoolean(UNIVERSAL_BOOT_ROOT, enabled)
+        if (enabled) {
+            editor.putBoolean(BOOT_ROOT_MODE, false)
+            editor.putBoolean(DFR_REROOT_AT_BOOT, false)
+        }
+        editor.apply()
+    }
+
+    /** The three gates as they stand, for the one caller that has to put them back exactly. */
+    internal fun rootGates(context: Context): RootGates = RootGates(
+        payload = bootRootMode(context),
+        helper = rerootAtBoot(context),
+        universal = universalBootRoot(context),
+    )
+
+    /**
+     * Sets the three gates together, in one commit and without the exclusivity the setters apply.
+     *
+     * The rule the individual setters enforce - turning one on turns the other two off - must not apply here,
+     * because this is a *restore*: a phone that carried two flags (an older build could write that, and both
+     * gates' comments say so) would silently lose one, and the caller would have moved the user's configuration
+     * under a button that promised not to. Off is written the same way as on, so a caller cannot leave a gate
+     * behind by taking one away - which is the whole reason this exists rather than three setter calls.
+     */
+    internal fun setRootGates(context: Context, gates: RootGates) {
         prefs(context).edit()
-            .putBoolean(BOOT_ROOT_MODE, enabled)
-            .apply()
+            .putBoolean(BOOT_ROOT_MODE, gates.payload)
+            .putBoolean(DFR_REROOT_AT_BOOT, gates.helper)
+            .putBoolean(UNIVERSAL_BOOT_ROOT, gates.universal)
+            .commit()
+    }
+
+    /**
+     * Whether the D2 fix is on: the helper writes Samsung's DMC vault flag at every boot, so download mode
+     * stays reachable on the firmware that locks it on a phone with a lock screen set.
+     *
+     * Off by default, and that default is the honest one rather than a cautious one. The write changes a
+     * byte in a Samsung store whose layout is undocumented and was confirmed on one chip, so it is a thing
+     * a person turns on deliberately - not something a phone acquires by having this app installed. The
+     * switch is this app's and the write is the helper's, because the vault only answers to a system-uid
+     * process: see `DfrInstall.STAGE_TWO_DMC_EXTRA` for how the two halves are joined.
+     */
+    fun dmcFix(context: Context): Boolean = prefs(context).getBoolean(DFR_DMC_FIX, false)
+
+    fun setDmcFix(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(DFR_DMC_FIX, enabled).apply()
     }
 
     /**
      * Whether a run that loaded KernelSU should hand the userspace over before it reports done.
      *
-     * Off by default, because what it does is close everything that is open, and a setting that did
-     * that unannounced would cost more than the tap it saves. What it buys when it is on: KernelSU's
-     * own soft reboot walks the module lifecycle in its normal order, so a run that started from a
-     * phone whose modules were inert ends with them loaded rather than with an instruction to restart.
+     * On by default, because the load is not the whole of the job: KernelSU mounts its modules, and
+     * nothing already running sees them until the userspace is built again, so a run that stops at the
+     * load leaves a phone that is rooted and behaving as if it were not. What that costs is the restart
+     * itself, which closes everything that is open - that is why it is a setting rather than something
+     * a run always does. What it buys: KernelSU's own soft reboot walks the module lifecycle in its
+     * normal order, so a run that started from a phone whose modules were inert ends with them loaded
+     * rather than with an instruction to restart.
      */
     fun restartAfterRoot(context: Context): Boolean =
-        prefs(context).getBoolean(RESTART_AFTER_ROOT, false)
+        prefs(context).getBoolean(RESTART_AFTER_ROOT, true)
 
     fun setRestartAfterRoot(context: Context, enabled: Boolean) {
         prefs(context).edit()
@@ -401,6 +570,72 @@ object AppPreferences {
 
     /** Whether a retry is armed at all, whatever boot armed it. */
     fun retryArmed(context: Context): Boolean = retryArmedInBoot(context) != null
+
+    /**
+     * What the last universal run resolved: which KernelSU, and which payload tier.
+     *
+     * Written when a universal run resolves its payload and read by whatever wants to run it again - a retry
+     * armed for the next boot, and the arming itself. It is stored rather than passed along because the two
+     * are not in the same process, or even the same boot: the run that resolved it is over by the time the
+     * retry runs.
+     *
+     * The flavour alone would be nearly enough - it is the same value the resolved payload writes - but not
+     * quite: that setting is the payload's to change, and somebody picking another flavour in the payload
+     * sheet would silently retarget a retry that was armed for the run they watched fail.
+     */
+    fun setUniversalPlan(context: Context, plan: UniversalPlan?) {
+        val editor = prefs(context).edit()
+        if (plan == null) {
+            editor.remove(UNIVERSAL_PLAN_FLAVOR).remove(UNIVERSAL_PLAN_TIER)
+        } else {
+            editor.putString(UNIVERSAL_PLAN_FLAVOR, plan.flavor.id)
+                .putString(UNIVERSAL_PLAN_TIER, plan.tier.name)
+        }
+        editor.apply()
+    }
+
+    /** The plan [setUniversalPlan] recorded, or null when no universal run has resolved one. */
+    fun universalPlan(context: Context): UniversalPlan? {
+        val flavor = prefs(context).getString(UNIVERSAL_PLAN_FLAVOR, null)
+            ?.let(KernelSuFlavor::fromId)
+            ?: return null
+        val tier = prefs(context).getString(UNIVERSAL_PLAN_TIER, null)
+            ?.let(PayloadTier::fromId)
+            ?: return null
+        return UniversalPlan(flavor, tier)
+    }
+
+    /**
+     * Arms the universal root's retry for the boot after [armedForBoot], or clears it with null.
+     *
+     * The same shape as [setRetryAfterReboot] and for the same reasons: committed rather than applied, because
+     * the retry is armed before a reboot is asked for and an asynchronous write that had not landed would lose
+     * the whole decision - and keyed on the boot that armed it, so the boot it was armed *for* is the one that
+     * finds it pending and no later boot inherits it.
+     */
+    fun setUniversalRetryAfterReboot(context: Context, armedForBoot: String?) {
+        val editor = prefs(context).edit()
+        if (armedForBoot == null) {
+            editor.remove(UNIVERSAL_RETRY_BOOT)
+        } else {
+            editor.putString(UNIVERSAL_RETRY_BOOT, armedForBoot)
+        }
+        editor.commit()
+    }
+
+    /**
+     * The universal retry this boot should run, or null when none was armed for it.
+     *
+     * Null in the boot that armed it, which is the whole mechanism: the arming happens *before* the restart is
+     * asked for, so the boot that finds it pending is necessarily a different one. The plan comes with it, and
+     * a record missing either half is no retry at all rather than a guess - a retry that ran the other
+     * KernelSU would install a root nobody asked for.
+     */
+    fun universalRetryPendingForBoot(context: Context): UniversalPlan? {
+        val armed = prefs(context).getString(UNIVERSAL_RETRY_BOOT, null) ?: return null
+        if (armed == AutoRootSupport.currentBootToken()) return null
+        return universalPlan(context)
+    }
 
     /**
      * How many image partitions a run set read-only in this boot, and zero when this boot set none.
@@ -535,6 +770,9 @@ object AppPreferences {
             slideRoute = ExploitOverride.normalizeRoute(
                 SlideRoute.parse(stored.getString(EXPLOIT_OVERRIDE_SLIDE_ROUTE, null)),
             ),
+            p0WindowDelayUsec = stored.getInt(EXPLOIT_OVERRIDE_P0_WINDOW, P0_WINDOW_NOT_CHOSEN)
+                .takeIf { it != P0_WINDOW_NOT_CHOSEN }
+                ?.let(ExploitOverride::normalizeP0WindowDelay),
         )
     }
 
@@ -550,21 +788,31 @@ object AppPreferences {
                 EXPLOIT_OVERRIDE_SLIDE_ROUTE,
                 ExploitOverride.normalizeRoute(override.slideRoute).name,
             )
+            .putInt(
+                EXPLOIT_OVERRIDE_P0_WINDOW,
+                ExploitOverride.normalizeP0WindowDelay(override.p0WindowDelayUsec)
+                    ?: P0_WINDOW_NOT_CHOSEN,
+            )
             .apply()
     }
 
     /**
-     * The same floor for the automatic install, stored separately on purpose.
+     * The shared floor for both unattended gates, stored under the name it has always had.
      *
-     * See [BootSettle.AUTO_ROOT_DEFAULT_SECONDS]: an automatic run has already waited out the boot
-     * before it can act, so it needs a shorter floor than a manual one - and someone tuning it must not
-     * be changing the wait a manual run does.
+     * See [BootSettle.GATE_DEFAULT_SECONDS]: Root on boot and Reroot at boot read this one value, so
+     * the two of them cannot come to disagree about how settled a device has to be before either acts
+     * with nobody at the screen - and a person tuning it must not be changing the wait a manual run
+     * does, which is why it is not [bootSettleSeconds].
+     *
+     * The stored key keeps the name it was first written under rather than following the accessors.
+     * A preference key is a fact about phones in the field, not a name in this code: renaming it would
+     * silently reset everyone who has ever chosen a value back to the default.
      */
-    fun autoRootSettleSeconds(context: Context): Int = BootSettle.normalize(
-        prefs(context).getInt(AUTO_ROOT_SETTLE_SECONDS, BootSettle.AUTO_ROOT_DEFAULT_SECONDS),
+    fun bootGateSettleSeconds(context: Context): Int = BootSettle.normalize(
+        prefs(context).getInt(AUTO_ROOT_SETTLE_SECONDS, BootSettle.GATE_DEFAULT_SECONDS),
     )
 
-    fun setAutoRootSettleSeconds(context: Context, seconds: Int) {
+    fun setBootGateSettleSeconds(context: Context, seconds: Int) {
         prefs(context).edit()
             .putInt(AUTO_ROOT_SETTLE_SECONDS, BootSettle.normalize(seconds))
             .apply()
@@ -594,6 +842,42 @@ object AppPreferences {
      * recovered from download mode. Turning it off is a decision about the device, so an existing
      * choice is never overwritten: a stored value wins over this default.
      */
+    /**
+     * Whether the guide has been accepted, which is what makes the first launch the only time it appears.
+     *
+     * Stored rather than derived from anything about the phone, because what it records is a reading: the
+     * guide is a wall of text in front of a flow that cannot be followed until it is out of the way, and
+     * the one thing worse than showing it twice is not showing it at all. It stays re-readable from Home.
+     */
+    fun guideAccepted(context: Context): Boolean = prefs(context).getBoolean(GUIDE_ACCEPTED, false)
+
+    fun setGuideAccepted(context: Context, accepted: Boolean) {
+        prefs(context).edit()
+            .putBoolean(GUIDE_ACCEPTED, accepted)
+            .apply()
+    }
+
+    /**
+     * Whether a run puts the screen out before the exploit starts.
+     *
+     * Off by default, because the press changes the screen of a phone whose owner asked for a run and not
+     * for that - and a run interrupted before it can press again leaves the phone dark with nobody told
+     * why. The reason it exists stands regardless: an awake display is the largest thing on a phone that
+     * can wake a worklist while the exploit is holding a kernel page it has freed, and a run that dies
+     * there costs the whole boot. The project this is ported from drove the same payload family and put
+     * that at the top of its crash causes. [RunScreenOff] is where the two presses happen, and a run with
+     * no shell cannot press at all - which is said in the log rather than left to look like the setting
+     * doing nothing.
+     */
+    fun screenOffDuringRun(context: Context): Boolean =
+        prefs(context).getBoolean(SCREEN_OFF_DURING_RUN, false)
+
+    fun setScreenOffDuringRun(context: Context, enabled: Boolean) {
+        prefs(context).edit()
+            .putBoolean(SCREEN_OFF_DURING_RUN, enabled)
+            .apply()
+    }
+
     fun partitionReadOnlyMode(context: Context): Boolean =
         prefs(context).getBoolean(PARTITION_READ_ONLY_MODE, true)
 
@@ -663,6 +947,41 @@ object AppPreferences {
     fun setLocalPayloadName(context: Context, name: String?) {
         val editor = prefs(context).edit()
         if (name == null) editor.remove(LOCAL_PAYLOAD_NAME) else editor.putString(LOCAL_PAYLOAD_NAME, name)
+        editor.apply()
+    }
+
+    /** When this app last injected the certificate, or null when it never did or has no record. */
+    fun dfrInjectedAt(context: Context): Long? =
+        prefs(context).getLong(DFR_INJECTED_AT, -1L).takeIf { it >= 0L }
+
+    fun setDfrInjectedAt(context: Context, at: Long?) {
+        val editor = prefs(context).edit()
+        if (at == null) editor.remove(DFR_INJECTED_AT) else editor.putLong(DFR_INJECTED_AT, at)
+        editor.apply()
+    }
+
+    /** When this app last installed the stage two, or null. */
+    fun dfrInstalledAt(context: Context): Long? =
+        prefs(context).getLong(DFR_INSTALLED_AT, -1L).takeIf { it >= 0L }
+
+    fun setDfrInstalledAt(context: Context, at: Long?) {
+        val editor = prefs(context).edit()
+        if (at == null) editor.remove(DFR_INSTALLED_AT) else editor.putLong(DFR_INSTALLED_AT, at)
+        editor.apply()
+    }
+
+    /**
+     * When this app last took its key out of `packages.xml`, or null when it never did.
+     *
+     * Only written when the uninstall changed the file: an uninstall that found nothing to remove leaves
+     * this alone, because there is nothing waiting on a restart to take effect.
+     */
+    fun dfrKeyRemovedAt(context: Context): Long? =
+        prefs(context).getLong(DFR_KEY_REMOVED_AT, -1L).takeIf { it >= 0L }
+
+    fun setDfrKeyRemovedAt(context: Context, at: Long?) {
+        val editor = prefs(context).edit()
+        if (at == null) editor.remove(DFR_KEY_REMOVED_AT) else editor.putLong(DFR_KEY_REMOVED_AT, at)
         editor.apply()
     }
 

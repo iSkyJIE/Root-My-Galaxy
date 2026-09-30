@@ -13,8 +13,8 @@ import java.io.FileOutputStream
  * The file is copied into app storage at import time rather than kept as a document URI. A run can
  * be started by the boot service, where no activity grant on a picked document exists, and a
  * persisted URI grant can be revoked or its provider uninstalled long after the imported payload
- * was chosen. The copy is validated before it can replace a payload — `.so` name, a size cap, and
- * an ELF header — and a rejected file leaves the previously imported one in place, so importing
+ * was chosen. The copy is validated before it can replace a payload `.so` name, a size cap, and
+ * an ELF header and a rejected file leaves the previously imported one in place, so importing
  * cannot leave the next run without an exploit.
  */
 object LocalPayload {

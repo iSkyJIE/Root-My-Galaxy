@@ -34,8 +34,8 @@ enum class PayloadMode {
     /**
      * Use the last payload that completed a verified run, and no network at all.
      *
-     * This is what makes a run possible when the catalog cannot be reached — the API is limited, the
-     * network is down, or the device is being used somewhere without one — and it is the mode a
+     * This is what makes a run possible when the catalog cannot be reached the API is limited, the
+     * network is down, or the device is being used somewhere without one and it is the mode a
      * boot-time run has to use, because at boot there is no one to wait for a download.
      */
     Offline,
@@ -160,13 +160,6 @@ private fun RemoteArtifact.toJson(): JSONObject = JSONObject().apply {
     sha256?.let { put("sha256", it) }
 }
 
-private fun JSONObject.artifact(): RemoteArtifact = RemoteArtifact(
-    url = getString("url"),
-    size = getLong("size"),
-    verifySize = optBoolean("verifySize", true),
-    sha256 = optString("sha256").trim().takeIf(String::isNotEmpty),
-)
-
 /**
  * The identity of a cached payload.
  *
@@ -231,6 +224,24 @@ internal object KnownGoodPayloadStore {
     fun describe(context: Context): CachedPayload? = runCatching { descriptor(context) }.getOrNull()
 
     /**
+     * The cached payload's daemon, for the staging that hands a daemon to the exploit.
+     *
+     * A different question from [load]: the caller wants the bytes this device's payload ships and nothing
+     * else - no chmod, no recording of a payload as being run, because nothing is being run yet. The
+     * artifact is verified on the way out exactly as [load] verifies it, so a cache that has been tampered
+     * with, or one left by an older build with a different helper, answers null here too.
+     *
+     * Null is "this phone has no verified payload cached", which the caller reports rather than works
+     * around: the daemon the phone has *installed* belongs to whichever KernelSU it runs, and handing that
+     * to an exploit bound for this project's payload is the kernel panic this rule exists for.
+     */
+    fun daemon(context: Context): File? = runCatching {
+        val cached = usableDescriptor(context, null)
+        val file = File(directory(context, cached.id), KSUD)
+        file.takeIf { fileMatchesArtifact(it, cached.kernelSu) }
+    }.getOrNull()
+
+    /**
      * The target the cached payload names, without reading its files.
      *
      * This is what a run resolves in Offline mode: the catalog is not consulted at all, and the
@@ -269,8 +280,8 @@ internal object KnownGoodPayloadStore {
     /**
      * Publishes a payload that has already completed a verified run.
      *
-     * The files must match what the profile declares — they were verified during the run, and this
-     * verifies them again — and the bundled helper is recorded, so the pairing cannot be changed by
+     * The files must match what the profile declares they were verified during the run, and this
+     * verifies them again and the bundled helper is recorded, so the pairing cannot be changed by
      * an app update without the cache being refused. The copy goes to a temporary directory and is
      * renamed into place, so an interrupted publish leaves the previous cache intact rather than a
      * half-written one that would then be run.

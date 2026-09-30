@@ -10,7 +10,7 @@ import org.junit.Test
  * Two things matter here beyond the arithmetic. The offers are menus rather than free-form numbers, so a
  * stored value has to resolve to one of them whatever is on disk. And a fresh-session profile hands its
  * pacing to the payload, so the whole-run setting can raise that ceiling but never cut a payload-native
- * attempt short — the case a user would most easily get wrong, and the one the app has to protect them
+ * attempt short the case a user would most easily get wrong, and the one the app has to protect them
  * from.
  */
 class RunLimitsTest {

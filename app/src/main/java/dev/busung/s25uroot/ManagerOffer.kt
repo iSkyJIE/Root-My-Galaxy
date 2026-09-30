@@ -89,7 +89,38 @@ internal fun offeredManager(context: Context, flavor: KernelSuFlavor): ManagerOf
  * Nothing is written when the entry declares no version, and the previous record is cleared rather than
  * kept: a payload that says nothing about its KernelSU must not leave an older payload's version behind
  * it, which would offer a manager for a daemon that is no longer the one being staged.
+ *
+ * **It also sets the flavour, and that is the point of the function now.** The flavour is not a second
+ * decision standing beside the payload; it is a summary of one. Everything that reads it - which manager
+ * package is offered and looked for, which releases the version picker lists, which module root on boot
+ * puts back - is a fact about the KernelSU this payload stages, and a setting that could disagree with the
+ * payload is a way to install the manager of a kernel this phone is not running. A phone set to
+ * KernelSU while a KernelSU-Next payload resolved for it would offer official KernelSU's manager and
+ * list tiann's releases, for a kernel only KernelSU-Next's manager can talk to. Deriving it removes that
+ * state rather than warning about it.
+ *
+ * The override is still reachable, and deliberately in one place: the payload sheet, where picking a
+ * payload of another flavour is what changes this. There is no separate switch to forget.
  */
 internal fun rememberResolvedPayload(context: Context, profile: TargetProfile) {
     AppPreferences.setPayloadKernelSuVersion(context, profile.flavor, profile.kernelSuVersion)
+    AppPreferences.setKernelsuFlavor(context, profile.flavor)
+}
+
+/**
+ * The same record, for a daemon that came from the generic tier rather than from a device entry.
+ *
+ * A generic daemon is not a [TargetProfile] - it belongs to no device, which is the whole reason it exists -
+ * but it is the same kind of fact: something the app has resolved, that a run is about to stage, and that
+ * therefore decides which KernelSU this phone is about to be running. So it is recorded the same way and for
+ * the same reason, and the manager the app offers is the release that matches the daemon.
+ *
+ * This is a second call site of the same two writes, deliberately, and it is still **one source of truth**:
+ * both are fed by whatever the app resolved - a device entry or a generic daemon - and neither may be set by
+ * anything else. `PayloadDecidesFlavorTest` holds both halves of that: no other module writes the flavour,
+ * and this file is the only place that does.
+ */
+internal fun rememberResolvedKernelSu(context: Context, flavor: KernelSuFlavor, version: String?) {
+    AppPreferences.setPayloadKernelSuVersion(context, flavor, version)
+    AppPreferences.setKernelsuFlavor(context, flavor)
 }

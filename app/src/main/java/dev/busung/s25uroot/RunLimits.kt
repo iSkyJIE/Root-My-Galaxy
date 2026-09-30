@@ -36,15 +36,15 @@ internal data class RunLimitsSettings(
  * The ceilings this app puts on a run, and which of them a person may change.
  *
  * A run has two owners, and only one of them is this app. The **payload profile** in the feed decides
- * *how the exploit is attempted* — how many tries, how long each one gets, which way it looks for the
- * slide — and the app hands those to the payload as environment variables. They are the payload's own
+ * *how the exploit is attempted* how many tries, how long each one gets, which way it looks for the
+ * slide and the app hands those to the payload as environment variables. They are the payload's own
  * account of itself, and a setting that overrode them would be this app claiming to know better than
  * the thing doing the work, so there isn't one.
  *
  * What this app owns is the *stopping*: how long a whole run may take, how much silence means a stalled
  * payload, and how long one helper command may sit there. Those are the numbers a device and a boot
- * change — a cold device settles late, an overloaded one prints nothing for a while, a slow phone takes
- * longer over each step — so those are the ones worth a setting. They are also the ones whose failure is
+ * change a cold device settles late, an overloaded one prints nothing for a while, a slow phone takes
+ * longer over each step so those are the ones worth a setting. They are also the ones whose failure is
  * *this app's* decision rather than the payload's, which is what makes them safe to move: a run that
  * reaches one is reported as a ceiling the user set, not as a payload that gave up.
  */
@@ -75,7 +75,7 @@ internal object RunLimits {
      * The floor under a fresh-session profile's whole-run ceiling.
      *
      * A fresh P0 session hands its pacing to the payload: one payload-native attempt, no attempt budget,
-     * and no stall watchdog — which is exactly the slow case. A ceiling below this would cut a
+     * and no stall watchdog which is exactly the slow case. A ceiling below this would cut a
      * payload-native attempt off *between* its own decisions rather than let it finish, so the setting
      * can raise this ceiling but never lower a fresh session below the app's own hour.
      */

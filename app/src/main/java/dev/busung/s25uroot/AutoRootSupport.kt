@@ -130,6 +130,25 @@ internal fun autoRootDecision(
     else -> AutoRootDecision.Run
 }
 
+/**
+ * Which plan a boot runs the chain with, from the two things that can ask for one.
+ *
+ * Pure, because the ordering *is* the rule and it is invisible in a diff: an armed retry is a tap the user made
+ * for a specific flavour and tier, and the standing switch runs whatever the phone last staged - so a boot that
+ * let the switch answer over the retry would run a different daemon than the one that was asked for, and would
+ * report the switch's plan while doing it. The retry wins whenever there is one; the switch answers only the
+ * boots nothing else asked about.
+ *
+ * Null from the switch with nothing recorded is the third state and not an error: it is the phone where the
+ * switch has been turned on and no run has ever staged a daemon, and the caller says exactly that rather than
+ * resolving a feed a boot may not have.
+ */
+internal fun universalBootPlan(
+    armedRetry: UniversalPlan?,
+    bootRootEnabled: Boolean,
+    recorded: UniversalPlan?,
+): UniversalPlan? = armedRetry ?: recorded?.takeIf { bootRootEnabled }
+
 internal object AutoRootSupport {
     private const val RECEIPT = "install_receipt"
     private const val RECEIPT_VERIFIED = "verified"
@@ -137,6 +156,30 @@ internal object AutoRootSupport {
     private const val STATE = "auto_root_state"
     private const val LAST_BOOT_COMPLETED_TOKEN = "last_boot_completed_boot_id"
     private const val LAST_ATTEMPT_TOKEN = "last_attempt_boot_id"
+
+    /**
+     * The reroot's own attempt, in the same store and with the same meaning as the payload install's.
+     *
+     * Two tokens rather than one, and the reason is [claimAttempt]'s last line: spending the payload
+     * install's attempt is what *consumes an armed retry*, and a reroot is not an install. A boot that
+     * rerooted and also ate the retry the user armed for it would have taken back a request it never
+     * honoured.
+     *
+     * What the two do share is the rule, which is the one that matters here: one attempt per kernel boot,
+     * keyed by the boot id rather than by a timestamp, so the userspace restarts that re-emit
+     * `BOOT_COMPLETED` cannot spend it twice.
+     */
+    private const val LAST_REROOT_ATTEMPT_TOKEN = "last_reroot_attempt_boot_id"
+
+    /**
+     * The chain's own boot run, in the same store and with the same meaning.
+     *
+     * A third token, for the reason the second one exists: a payload install, a helper reroot and a chain run
+     * are three different things that a boot can spend its one attempt on, and the payload flow's token is what
+     * consumes an armed payload retry. Marking a chain run as a payload attempt would take back a request this
+     * boot never honoured - and would tell the payload gate that this boot had already tried, which it had not.
+     */
+    private const val LAST_UNIVERSAL_ATTEMPT_TOKEN = "last_universal_attempt_boot_id"
 
     fun currentBootToken(): String? = kernelBootToken()
 
@@ -224,6 +267,47 @@ internal object AutoRootSupport {
         // install it was not otherwise owed", and it has now been given one.
         if (stored) AppPreferences.setRetryAfterReboot(context, null)
         return stored
+    }
+
+    /** Whether this boot has already asked the helper for a reroot. */
+    fun hasAttemptedRerootBoot(context: Context, bootToken: String): Boolean =
+        context.getSharedPreferences(STATE, Context.MODE_PRIVATE)
+            .getString(LAST_REROOT_ATTEMPT_TOKEN, null) == bootToken
+
+    /**
+     * Claims this boot's single reroot attempt.
+     *
+     * Claimed at the moment the helper is actually started rather than when the boot is first considered,
+     * which is the one place this differs from the install above: a boot whose attempt went to a launch that
+     * never happened - no shell up yet, the setting turned off while the gate waited - has spent nothing, and
+     * the boot service is the only thing that can tell those apart. What it buys is that a boot where the
+     * automation could not start is a boot that can still be started by hand from the notification.
+     */
+    @Synchronized
+    fun claimRerootAttempt(context: Context, bootToken: String): Boolean {
+        val preferences = context.getSharedPreferences(STATE, Context.MODE_PRIVATE)
+        if (preferences.getString(LAST_REROOT_ATTEMPT_TOKEN, null) == bootToken) return false
+        return preferences.edit()
+            .putString(LAST_REROOT_ATTEMPT_TOKEN, bootToken)
+            .commit()
+    }
+
+    /**
+     * Claims this boot's single chain run.
+     *
+     * Claimed before the run rather than after, like the payload flow's, because the two things that could
+     * start one are two receivers waking up to the same broadcast. Claimed only by the standing switch: an armed
+     * retry is consumed by its own arming, which is a request for one specific boot, and taking a token as well
+     * would leave a boot that armed two retries - which nothing allows, and nothing enforces either - unable to
+     * run the second one.
+     */
+    @Synchronized
+    fun claimUniversalAttempt(context: Context, bootToken: String): Boolean {
+        val preferences = context.getSharedPreferences(STATE, Context.MODE_PRIVATE)
+        if (preferences.getString(LAST_UNIVERSAL_ATTEMPT_TOKEN, null) == bootToken) return false
+        return preferences.edit()
+            .putString(LAST_UNIVERSAL_ATTEMPT_TOKEN, bootToken)
+            .commit()
     }
 
     /**

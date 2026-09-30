@@ -9,13 +9,88 @@ import androidx.annotation.StringRes
  * the exploit, or the KernelSU load, and the stage is what tells them apart. It is recorded with
  * every failure, so a run that ended an hour ago still says where it ended.
  */
-enum class RunStage(@StringRes val label: Int) {
-    Transport(R.string.stage_transport),
-    Target(R.string.stage_target),
-    Download(R.string.stage_download),
-    Exploit(R.string.stage_exploit),
-    KernelSu(R.string.stage_kernel_su),
-    Verify(R.string.stage_verify),
+/**
+ * The step a run stopped in, whichever flow it was.
+ *
+ * Two flows, two vocabularies, and they are not interchangeable. The payload flow's steps are about resolving
+ * and carrying a payload - `Transport`, `Target`, `Download` - while the universal root resolves no target and
+ * transports nothing: its steps are its own four, and a failure that named one flow's step for the other's run
+ * says something that did not happen, which is what the universal root did while it borrowed [RunStage].
+ *
+ * What everything else needs of a stage is the whole of this interface, and it is only two things: a name to
+ * show, and which of the run's four steps it belongs to. The failure card and the history line read the first;
+ * the step marks and the progress bar read the second.
+ *
+ * An interface rather than one enumeration with both sets in it, because the alternative lets a payload
+ * failure name a universal step - a compile error here is a wrong sentence on a screen otherwise.
+ */
+sealed interface FailureStage {
+    /**
+     * The constant's own name, which is what a record stores.
+     *
+     * Declared here so a stored stage is written and read through the interface rather than through one
+     * implementation: an enum already has this member, so every implementor satisfies it for free - and the two
+     * vocabularies' names do not collide (`Transport` against `Support`), which is what lets one field in a
+     * record hold either.
+     */
+    val name: String
+
+    /** The step's name, for the failure card and the history line. */
+    val label: Int
+
+    /** Which of the run's four steps this is, counted from zero. */
+    val stepIndex: Int
+
+    companion object {
+        /**
+         * The stage a stored name is, searching both vocabularies.
+         *
+         * By name rather than by position: the two enumerations are different lengths, and a record written by
+         * one build has to be read back by the next. A name in neither is a record from a build that had a
+         * step this one does not, which reads as "no stage" rather than as a guess.
+         */
+        fun fromName(name: String?): FailureStage? = name?.let { sought ->
+            RunStage.entries.firstOrNull { it.name == sought }
+                ?: UniversalStage.entries.firstOrNull { it.name == sought }
+        }
+    }
+}
+
+/** The payload flow's stages: how it got to the device, and what it carried there. */
+enum class RunStage(
+    @StringRes override val label: Int,
+    override val stepIndex: Int,
+) : FailureStage {
+    Transport(R.string.stage_transport, 0),
+    Target(R.string.stage_target, 0),
+    Download(R.string.stage_download, 1),
+    Exploit(R.string.stage_exploit, 2),
+    KernelSu(R.string.stage_kernel_su, 3),
+    Verify(R.string.stage_verify, 3),
+}
+
+/**
+ * The universal root's stages, which are its four steps and nothing else.
+ *
+ * There are no more because there is nothing else it does: it checks the phone, resolves and stages a daemon,
+ * runs the chain, and loads what the chain installed. No target to resolve, no transport to choose, no payload
+ * to verify against a catalog - and a stage for any of those would be a step this flow does not have.
+ */
+enum class UniversalStage(
+    @StringRes override val label: Int,
+    override val stepIndex: Int,
+) : FailureStage {
+    Support(R.string.universal_stage_support, 0),
+    Payload(R.string.universal_stage_payload, 1),
+    // `Chain` rather than `Exploit`, and the difference is not cosmetic: both vocabularies are stored by name,
+    // so a second `Exploit` would make [FailureStage.fromName] resolve a universal failure to the payload
+    // flow's step - the same wrong sentence this whole change is about, arriving through the record instead of
+    // through a screen. Its label is still the flow's own words for the step.
+    Chain(R.string.universal_stage_exploit, 2),
+    // The one stage where the two vocabularies agree, and it is not a borrowed word: loading KernelSU is the
+    // same step in both flows and [RunStage.KernelSu] already says it. A second string with the same sentence
+    // is a second thing to keep in step.
+    Load(R.string.stage_kernel_su, 3),
 }
 
 /**
@@ -25,7 +100,7 @@ enum class RunStage(@StringRes val label: Int) {
  * of the kernel race.
  */
 data class RunFailure(
-    val stage: RunStage,
+    val stage: FailureStage,
     val reason: String,
     val evidence: List<String> = emptyList(),
     /**
@@ -55,7 +130,7 @@ data class RunFailure(
          * a message that arrives carrying a log is turned into a cause, not rendered as one.
          */
         fun of(
-            stage: RunStage,
+            stage: FailureStage,
             reason: String,
             evidence: List<String> = emptyList(),
             readOnlyWall: Boolean = false,
@@ -126,7 +201,25 @@ private val SIGNAL_NAMES = mapOf(
  * Saying `137` tells nobody anything; saying that the payload was killed by signal 9 is the single
  * most useful thing a run can report about a payload that died without choosing to.
  */
+/**
+ * The codes that mean a command did not *run*, rather than running and failing.
+ *
+ * These are the shell's own, and they are a different class from a program's: `1` is a program that ran and
+ * said no, while these are the ways it never started. `255` is the one that matters in practice - it is what a
+ * refused or absent privileged spawn returns - and until now it was the only common failure the summary could
+ * not explain, so it read as a mystery instead of as "nothing was executed". 126 and 127 come along because
+ * they are the same class and were in the same blind spot.
+ */
+private val SHELL_EXIT = mapOf(
+    126 to "the command was found but could not be executed",
+    127 to "the command was not found",
+    255 to "the command could not be run: a refused or unavailable privilege, or nothing to execute",
+)
+
 internal fun exitCodeSummary(exitCode: Int): String? {
+    // Asked before the signal range, because these codes can never be signals and the range check below is the
+    // wrong question for them.
+    SHELL_EXIT[exitCode]?.let { return it }
     val signal = exitCode - 128
     if (exitCode !in 129..192 || signal <= 0) return null
     val name = SIGNAL_NAMES[signal]

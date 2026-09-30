@@ -1,11 +1,11 @@
 package dev.busung.s25uroot
 
+import android.content.Context
 import android.view.HapticFeedbackConstants
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Refresh
@@ -13,11 +13,8 @@ import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,7 +58,16 @@ private data class RecoveryMessage(
  */
 @Composable
 internal fun RootRecoverySection(
-    onBootRootModeChanged: (Boolean) -> Unit,
+    /**
+     * Asks the screen holding the root gates to re-read them all.
+     *
+     * A request rather than a value, because reboot-and-unroot moves **three** preferences and this section
+     * reads none of them: it hands back the fact that they changed, and the page that draws the three switches
+     * re-reads them from storage. An earlier shape passed the payload gate's new value here, which was enough
+     * while that was the only gate the action touched, and would now leave the other two switches drawn as on
+     * over a phone that had already turned them off.
+     */
+    onRootGatesChanged: () -> Unit,
     /** False when runs are told not to load KernelSU, which is what these actions consume. */
     kernelSuLoadingEnabled: Boolean = true,
     /** Opens a settings card by its target: this section lives in the list that holds that card. */
@@ -77,9 +83,7 @@ internal fun RootRecoverySection(
     fun report(tool: RecoveryTool, outcome: RecoveryOutcome) {
         message = RecoveryMessage(
             title = context.getString(tool.titleRes()),
-            // What was accepted differs between the actions: two of them restart the Android runtime
-            // and one restarts the phone, so the accepted message is the action's own.
-            detail = if (outcome.accepted) context.getString(tool.acceptedRes()) else outcome.detail,
+            detail = recoveryOutcomeMessage(context, tool, outcome),
             failure = !outcome.accepted,
             readOnlyWall = outcome.readOnlyWall,
         )
@@ -90,11 +94,9 @@ internal fun RootRecoverySection(
         running = tool
         scope.launch {
             val outcome = runRecoveryAction(context, tool)
-            // The stored state is the one the screen follows, so a refusal puts root on boot back
-            // on screen as well as on disk, and an accepted one leaves both off.
-            if (tool == RecoveryTool.RebootAndUnroot) {
-                onBootRootModeChanged(AppPreferences.bootRootMode(context))
-            }
+            // The stored state is the one the screen follows, so a refusal puts back on screen whatever is
+            // back on disk, and an accepted one leaves the gates off.
+            if (tool == RecoveryTool.RebootAndUnroot) onRootGatesChanged()
             report(tool, outcome)
             running = null
         }
@@ -107,19 +109,20 @@ internal fun RootRecoverySection(
             title = { Text(stringResource(tool.titleRes())) },
             text = { Text(stringResource(tool.confirmRes())) },
             confirmButton = {
-                TextButton(onClick = {
-                    view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                    confirming = null
-                    run(tool)
-                }) {
-                    Text(stringResource(tool.actionRes()))
-                }
+                AppDialogActions(
+                    listOf(
+                        // The action the row was pressed for is the one this dialog recommends, and the
+                        // only answer in the set that is filled.
+                        AppAction(tool.actionRes(), AppActionRole.Priority) {
+                            view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                            confirming = null
+                            run(tool)
+                        },
+                        AppAction(R.string.action_cancel) { confirming = null },
+                    ),
+                )
             },
-            dismissButton = {
-                TextButton(onClick = { confirming = null }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            },
+            dismissButton = null,
         )
     }
 
@@ -147,12 +150,15 @@ internal fun RootRecoverySection(
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                    message = null
-                }) {
-                    Text(stringResource(R.string.action_close))
-                }
+                // One answer, so it is the loud one: there is nothing here for it to be recommended over.
+                AppDialogActions(
+                    listOf(
+                        AppAction(R.string.action_close, AppActionRole.Priority) {
+                            view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                            message = null
+                        },
+                    ),
+                )
             },
         )
     }
@@ -197,10 +203,26 @@ internal fun RootRecoverySection(
 @Composable
 internal fun RecoveryActionButton(
     tool: RecoveryTool,
-    label: String,
+    /**
+     * What the button says, as the resource rather than the resolved sentence.
+     *
+     * This was a `String` while the button was built here - the caller resolved it and this function
+     * drew it - and the shared answer button takes a label resource, because the answers elsewhere in
+     * the app are all resources and the set is where they are resolved. Nothing about the call site
+     * changes but the type: its sentence is still its own.
+     */
+    @StringRes label: Int,
+    /**
+     * How loud this answer is, which is the caller's to say because it depends on the row.
+     *
+     * Required rather than defaulted: a row of two loud answers has no loud one, and whether this tool is
+     * that row's loud answer is a fact about what else is beside it. On the run screen it is; among a set of
+     * tools it would not be.
+     */
+    role: AppActionRole,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    onBootRootModeChanged: (Boolean) -> Unit = {},
+    onRootGatesChanged: () -> Unit = {},
     /**
      * Opens a settings card by its target, for a refusal this app's own protection caused.
      *
@@ -216,23 +238,25 @@ internal fun RecoveryActionButton(
     var confirming by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<RecoveryMessage?>(null) }
 
-    FilledTonalButton(
-        onClick = {
+    // The app's own answer button, because this press has a slow half: the action it confirms replaces the
+    // running framework, so the wait is not brief, and the button that started it is where "is it working"
+    // belongs. It used to answer that by hand, swapping its own icon for a spinner - which is
+    // [AppAction.progress], drawn beside the label rather than in place of the tool's icon. Its fill is the
+    // caller's [role], because only the caller can see the row: where this is one of several tools that row
+    // already has a recommended answer, and where it is the step that finishes a run's job it is that answer.
+    // The two are one parameter apart, which is why they are not drawn differently.
+    AppActionButton(
+        AppAction(
+            label = label,
+            role = role,
+            enabled = enabled && !running,
+            progress = running,
+        ) {
             view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
             confirming = true
         },
         modifier = modifier,
-        enabled = enabled && !running,
-    ) {
-        if (running) {
-            LoadingIndicator(modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-        } else {
-            Icon(tool.icon(), contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-        }
-        Text(label)
-    }
+    )
 
     if (confirming) {
         AlertDialog(
@@ -241,36 +265,29 @@ internal fun RecoveryActionButton(
             title = { Text(stringResource(tool.titleRes())) },
             text = { Text(stringResource(tool.confirmRes())) },
             confirmButton = {
-                TextButton(onClick = {
-                    view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                    confirming = false
-                    running = true
-                    scope.launch {
-                        val outcome = runRecoveryAction(context, tool)
-                        if (tool == RecoveryTool.RebootAndUnroot) {
-                            onBootRootModeChanged(AppPreferences.bootRootMode(context))
-                        }
-                        message = RecoveryMessage(
-                            title = context.getString(tool.titleRes()),
-                            detail = if (outcome.accepted) {
-                                context.getString(tool.acceptedRes())
-                            } else {
-                                outcome.detail
-                            },
-                            failure = !outcome.accepted,
-                            readOnlyWall = outcome.readOnlyWall,
-                        )
-                        running = false
-                    }
-                }) {
-                    Text(stringResource(tool.actionRes()))
-                }
+                AppDialogActions(
+                    listOf(
+                        AppAction(tool.actionRes(), AppActionRole.Priority) {
+                            view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                            confirming = false
+                            running = true
+                            scope.launch {
+                                val outcome = runRecoveryAction(context, tool)
+                                if (tool == RecoveryTool.RebootAndUnroot) onRootGatesChanged()
+                                message = RecoveryMessage(
+                                    title = context.getString(tool.titleRes()),
+                                    detail = recoveryOutcomeMessage(context, tool, outcome),
+                                    failure = !outcome.accepted,
+                                    readOnlyWall = outcome.readOnlyWall,
+                                )
+                                running = false
+                            }
+                        },
+                        AppAction(R.string.action_cancel) { confirming = false },
+                    ),
+                )
             },
-            dismissButton = {
-                TextButton(onClick = { confirming = false }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            },
+            dismissButton = null,
         )
     }
 
@@ -298,16 +315,92 @@ internal fun RecoveryActionButton(
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                    message = null
-                }) {
-                    Text(stringResource(R.string.action_close))
-                }
+                // One answer, so it is the loud one: there is nothing here for it to be recommended over.
+                AppDialogActions(
+                    listOf(
+                        AppAction(R.string.action_close, AppActionRole.Priority) {
+                            view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                            message = null
+                        },
+                    ),
+                )
             },
         )
     }
 }
+
+/**
+ * What to say about an outcome, in one place for the two screens that report one.
+ *
+ * A refusal is the child's words already explained, and an acceptance is the action's own sentence -
+ * except for the one action that brings an account of what it did with it. A reboot-and-unroot leaves
+ * the wipe report in the acknowledgement's detail, so the accepted message is built from *that* rather
+ * than from a fixed sentence: "the phone is restarting" is the least interesting half of what happened,
+ * and what the user asked to be told is what was actually removed.
+ */
+internal fun recoveryOutcomeMessage(
+    context: Context,
+    tool: RecoveryTool,
+    outcome: RecoveryOutcome,
+): String = wipeReportFor(outcome, tool)?.let { report -> wipeOutcomeMessage(context, report) }
+    ?: if (outcome.accepted) context.getString(tool.acceptedRes()) else outcome.detail
+
+/**
+ * The wipe report an outcome carries, or null when there is none to read.
+ *
+ * The decision, split from the sentence it produces so it can be tested without a device: which action
+ * reads a report out of its acceptance, and when a detail simply is not one. A refusal never carries a
+ * report - nothing was wiped to report on - and no other action publishes one, so a detail that happens
+ * to parse is only ever read out for the action that owns it.
+ */
+internal fun wipeReportFor(outcome: RecoveryOutcome, tool: RecoveryTool): WipeReport? =
+    if (outcome.accepted && tool == RecoveryTool.RebootAndUnroot) {
+        parseWipeReport(outcome.detail)
+    } else {
+        null
+    }
+
+/**
+ * The wipe's account as a sentence: what went, and what is still there.
+ *
+ * The leftovers are named rather than counted because a name is what makes them actionable - someone can
+ * look at the file - but only a few are: on a shell that is not root every single entry is left behind,
+ * and a dialog that prints a module store is a dialog nobody reads to the end of.
+ */
+internal fun wipeOutcomeMessage(context: Context, report: WipeReport, named: Int = 3): String {
+    val adb = report.forDirectory(WIPE_DIRECTORIES[0])
+    val tmp = report.forDirectory(WIPE_DIRECTORIES[1])
+    if (report.complete) {
+        return context.getString(
+            R.string.recovery_wipe_complete,
+            adb?.removed ?: 0,
+            tmp?.removed ?: 0,
+        )
+    }
+    val split = splitLeftovers(report.leftovers, named)
+    val names = if (split.more > 0) {
+        split.named.joinToString(", ") + ", " + context.getString(R.string.recovery_wipe_more, split.more)
+    } else {
+        split.named.joinToString(", ")
+    }
+    return context.getString(
+        R.string.recovery_wipe_incomplete,
+        adb?.removed ?: 0,
+        adb?.total ?: 0,
+        tmp?.removed ?: 0,
+        tmp?.total ?: 0,
+        names,
+    )
+}
+
+/** Which leftovers a sentence can hold, and how many are left to a count. */
+internal data class LeftoverNames(val named: List<String>, val more: Int)
+
+/** The first [limit] leftovers by name, and how many more there were. */
+internal fun splitLeftovers(leftovers: List<String>, limit: Int): LeftoverNames = LeftoverNames(
+    named = leftovers.take(limit),
+    more = (leftovers.size - limit).coerceAtLeast(0),
+)
 
 private fun RecoveryTool.icon(): ImageVector = when (this) {
     RecoveryTool.ReloadModules -> Icons.Rounded.Refresh

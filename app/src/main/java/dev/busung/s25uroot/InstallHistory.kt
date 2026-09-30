@@ -47,8 +47,13 @@ data class InstallHistoryEntry(
     val sourceLabel: String? = null,
     val sourceCommit: String? = null,
     val usedShizuku: Boolean = false,
-    /** Where a failed run stopped, so the detail screen can say more than "Failed". */
-    val failureStage: RunStage? = null,
+    /**
+     * Where a failed run stopped, so the detail screen can say more than "Failed".
+     *
+     * A [FailureStage] rather than one flow's enumeration: the payload flow's steps and the universal root's are
+     * different steps, and which one a record holds depends only on which flow the run was - see [RunKind].
+     */
+    val failureStage: FailureStage? = null,
     val failureReason: String? = null,
     /**
      * Where a run in flight has got to, written as it moves and cleared when it ends.
@@ -62,6 +67,32 @@ data class InstallHistoryEntry(
      * is one nothing can draw a bar for, which is not the same as a run at its first step.
      */
     val phase: InstallPhase? = null,
+    /**
+     * Which flow the run was - see [RunKind].
+     *
+     * Recorded for the same reason the phase is: a run is read back by a screen that did not start it, and
+     * what that screen says about it is drawn from the record. Without this the two flows are one, and a
+     * universal run is read back as a payload run - which draws the payload flow's four steps over a run that
+     * fetched no payload, and offers the payload flow's Retry on a run that cannot be retried in this boot.
+     *
+     * **Null is not a payload run.** It is "this record does not say which flow it was", which is the honest
+     * reading of every entry written before the flow joined the record - and it is not a detail: one of those
+     * runs on this phone was a DirtyFrag run, so a row that named the payload flow's exploit over it would be
+     * this app stating a fact about a real run that the file does not contain. Only [decode] can produce the
+     * null; every entry the app writes passes a kind, so this is a question about reading old files and not
+     * about what a run is.
+     */
+    val kind: RunKind? = RunKind.Payload,
+    /**
+     * How long the run took to root the phone, or null for one that did not, or that predates this.
+     *
+     * The interval from the exploit starting to root being confirmed - see [RootStopwatch] - and the one fact
+     * in this record that is a *measurement* rather than a timestamp. It is what makes two runs comparable: the
+     * clock times above say when they happened, and this says which one was quicker.
+     *
+     * Both flows record it, because both pass through the same two phases to get here.
+     */
+    val rootedInMillis: Long? = null,
 )
 
 /**
@@ -167,6 +198,10 @@ class InstallHistoryStore(private val context: Context) {
         .put("failureStage", entry.failureStage?.name ?: JSONObject.NULL)
         .put("failureReason", entry.failureReason ?: JSONObject.NULL)
         .put("phase", entry.phase?.name ?: JSONObject.NULL)
+        // Absent rather than written as a default when a record does not say, so a file this app rewrites
+        // cannot invent a flow for a run it did not record.
+        .put("kind", entry.kind?.name)
+        .put("rootedInMillis", entry.rootedInMillis ?: JSONObject.NULL)
 
     private fun decodeOrQuarantine(file: File): InstallHistoryEntry? = try {
         decode(AtomicFile(file).openRead().use { it.readBytes() })
@@ -194,13 +229,24 @@ class InstallHistoryStore(private val context: Context) {
             sourceLabel = value.optionalString("sourceLabel"),
             sourceCommit = value.optionalString("sourceCommit"),
             usedShizuku = value.optBoolean("usedShizuku", false),
-            failureStage = value.optionalString("failureStage")
-                ?.let { name -> RunStage.entries.firstOrNull { it.name == name } },
+            failureStage = FailureStage.fromName(value.optionalString("failureStage")),
             failureReason = value.optionalString("failureReason"),
             // Read the same way, and forgiving for the same reason: a phase this build does not know is a
             // record written by another one, and a bar that cannot be drawn is not a record that cannot be read.
             phase = value.optionalString("phase")
                 ?.let { name -> InstallPhase.entries.firstOrNull { it.name == name } },
+            // And the flow, read the same forgiving way - with one difference: an *absent* field stays absent
+            // (null) rather than becoming a payload run. An unknown name still falls back to the payload run,
+            // because a record that cannot be read is a run that is hidden; a record that never said is a
+            // record that never said, and the two are told apart here so a screen can draw the difference.
+            kind = value.optionalString("kind")?.let { RunKind.fromName(it) },
+            // Absent in every record written before this, and in one whose run did not root the phone: both
+            // read as "no measurement" rather than as zero, which a duration of 0 could not be told from.
+            rootedInMillis = if (value.isNull("rootedInMillis")) {
+                null
+            } else {
+                value.getLong("rootedInMillis").takeIf { it >= 0L }
+            },
         )
     }
 

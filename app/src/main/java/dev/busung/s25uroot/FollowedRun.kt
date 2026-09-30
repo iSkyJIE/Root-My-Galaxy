@@ -35,6 +35,14 @@ internal data class FollowedRun(val entry: InstallHistoryEntry, val holder: RunH
         phase = entry.phase ?: InstallPhase.Checking,
         message = entry.log.lastLogLine(),
         log = entry.log,
+        // From the record, and this is the half that was missing: this screen did not start the run, so the
+        // flow is only knowable if the run wrote it down. Without it a universal run being followed was drawn
+        // as a payload run - the wrong four steps, and the payload flow's Retry offered on it.
+        //
+        // A record that does not say reads as a payload run, which is the fallback this screen has always
+        // used for those - it has to draw *something*, unlike the history row, which can simply not name a
+        // flow it does not know.
+        kind = entry.kind ?: RunKind.Payload,
     )
 }
 

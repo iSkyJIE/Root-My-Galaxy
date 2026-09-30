@@ -1,6 +1,5 @@
 package dev.busung.s25uroot
 
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
@@ -63,7 +62,7 @@ class AutoRootService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createChannel()
+        BootServiceStart.ensureChannel(this, CHANNEL)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -77,10 +76,12 @@ class AutoRootService : Service() {
         retryArmedThisBoot = AutoRootSupport.currentBootToken()
             ?.let { bootToken -> AppPreferences.retryPendingForBoot(this, bootToken) }
             ?: false
-        startForeground(
-            NOTIFICATION_ID,
-            buildNotification(getString(R.string.autoroot_stabilizing), ongoing = true),
-        )
+        // The first thing this boot says, and the first chance for it to be seen without the app: the
+        // opening notification is promoted like every other one this gate posts, so the wait before a run
+        // is in the status bar chip rather than only in the shade. See [notifyOngoing].
+        val opening = buildNotification(getString(R.string.autoroot_stabilizing), ongoing = true)
+        RunNotification.live(opening, getString(R.string.autoroot_chip_booting), fraction = null)
+        startForeground(NOTIFICATION_ID, opening.build())
         gateJob = scope.launch {
             try {
                 runGate()
@@ -121,6 +122,53 @@ class AutoRootService : Service() {
         if (initialBootToken == null) {
             AppLog.warn(AppLogTags.BOOT, "Root on boot skipped: the kernel boot id could not be read")
             stopWithoutResult()
+            return
+        }
+        // The universal root's armed retry, asked before anything about the payload flow is. It is a different
+        // flow with different settings - no cached payload, no Shizuku promise, no root-on-boot switch - so the
+        // questions below are not its questions, and a phone that has never installed a payload would stand down
+        // long before reaching it.
+        val universalRetry = AppPreferences.universalRetryPendingForBoot(this)
+        // The other thing that can ask for a chain run: the standing switch, which asks for every boot. The two
+        // are resolved together - see [universalBootPlan] for why the retry wins - and what comes out is either
+        // the plan this boot runs, or null with nothing to run and nothing to say.
+        val universalBootRoot = AppPreferences.universalBootRoot(this)
+        val universalPlan = universalBootPlan(
+            armedRetry = universalRetry,
+            bootRootEnabled = universalBootRoot,
+            recorded = AppPreferences.universalPlan(this),
+        )
+        if (universalRetry != null) {
+            // Consumed here rather than where it was armed: this is the boot it was armed for, and a retry left
+            // armed would run again on every boot after it.
+            AppPreferences.setUniversalRetryAfterReboot(this, null)
+            AppLog.info(
+                AppLogTags.BOOT,
+                "Universal retry armed for this boot: ${universalRetry.flavor.label}, " +
+                    "${universalRetry.tier.name} payload",
+            )
+        }
+        if (universalPlan != null) {
+            // The switch's run spends this boot's chain attempt, because a switch is a request for every boot
+            // and not for one: without the token, a userspace restart that re-emits `BOOT_COMPLETED` would run
+            // the chain twice in a kernel that the first run already patched. An armed retry is spent by its own
+            // arming - it names one boot - so it does not take the token as well, which is the rule
+            // [claimUniversalAttempt] documents.
+            if (universalRetry == null && !AutoRootSupport.claimUniversalAttempt(this, initialBootToken)) {
+                AppLog.info(AppLogTags.BOOT, "The chain's boot run was already claimed for this boot")
+                stopWithoutResult()
+                return
+            }
+            runUniversalBootRun(universalPlan, initialBootToken)
+            return
+        }
+        if (universalBootRoot) {
+            // The switch is on and there is nothing to run: no run has ever staged a daemon on this phone, so a
+            // boot has nothing to stage. Said rather than skipped - a boot that did nothing would look exactly
+            // like the switch having been ignored - and refused rather than resolved from a feed this boot may
+            // not have.
+            AppLog.warn(AppLogTags.BOOT, "The chain's boot gate needs one run first: no daemon is staged")
+            finish(getString(R.string.autoroot_universal_needs_run))
             return
         }
         // The authoritative reading, not the native one: this is the decision that spends the boot's
@@ -261,22 +309,33 @@ class AutoRootService : Service() {
     }
 
     /**
-     * Waits out this path's own boot-settle floor, reporting the countdown.
+     * Waits out the boot-settle floor, reporting the countdown.
      *
-     * It is a separate setting from the manual one because the two are waiting out different amounts.
-     * By the time this service is running, `BOOT_COMPLETED` has already passed, so part of the boot is
-     * spent and the remaining wait is shorter; a person who tunes the automatic floor is deciding how
-     * much unattended risk to take, not how long a manual run pauses. Reading one setting for both
-     * would make the second decision silently rewrite the first.
+     * The floor is the shared one - see [BootSettle.GATE_DEFAULT_SECONDS] - and so is the loop that
+     * waits it out: Reroot at boot waits the same clock from the same `BOOT_COMPLETED`, and two copies
+     * of "how settled is settled enough" is how the two of them come to disagree. The countdown is
+     * this gate's own, though, because the notification it draws on is.
+     *
+     * A withdrawal of the setting is not passed through as `stillWanted`: what this gate does about it
+     * is checked once the wait is over, by the `require` that follows, which is what turns it into the
+     * one account of a boot that got no automatic install rather than into a silence.
      */
     private suspend fun awaitSettledFloor() {
-        val required = AppPreferences.autoRootSettleSeconds(this)
-        while (true) {
-            val left = BootSettle.remainingMillis(required, BootSettle.elapsedMillis())
-            if (left <= 0L) return
-            notifyOngoing(getString(R.string.status_boot_settle, BootSettle.formatRemaining(left)))
-            delay(SETTLE_TICK_MILLIS)
-        }
+        val required = AppPreferences.bootGateSettleSeconds(this)
+        // The window the countdown is drawn against, normalized because that is the value the wait itself
+        // uses: a stored number that is not one the setting offers would otherwise leave the bar a step
+        // ahead of the countdown it is drawn beside.
+        val windowMillis = BootSettle.normalize(required) * 1_000L
+        BootSettle.awaitFloor(
+            requiredSeconds = required,
+            onWaiting = { left ->
+                notifyOngoing(
+                    message = getString(R.string.status_boot_settle, BootSettle.formatRemaining(left)),
+                    chip = R.string.autoroot_chip_booting,
+                    fraction = waitedFraction(left, windowMillis),
+                )
+            },
+        )
     }
 
     /**
@@ -463,10 +522,12 @@ class AutoRootService : Service() {
                     stillWanted = { AppPreferences.shizukuMode(this) },
                 ) { remaining ->
                     notifyOngoing(
-                        getString(
+                        message = getString(
                             R.string.autoroot_shizuku_waiting_for_network,
                             BootSettle.formatRemaining(remaining),
                         ),
+                        chip = R.string.autoroot_chip_shizuku,
+                        fraction = waitedFraction(remaining, NETWORK_WAIT_MILLIS),
                     )
                 }
                 if (waited == NetworkWait.Abandoned) {
@@ -520,10 +581,106 @@ class AutoRootService : Service() {
                         )
                     }
             }
-            notifyOngoing(getString(R.string.autoroot_shizuku_waiting, BootSettle.formatRemaining(left)))
-            delay(SETTLE_TICK_MILLIS)
-            spentMillis += SETTLE_TICK_MILLIS
+            notifyOngoing(
+                message = getString(R.string.autoroot_shizuku_waiting, BootSettle.formatRemaining(left)),
+                chip = R.string.autoroot_chip_shizuku,
+                fraction = waitedFraction(left, SHIZUKU_WAIT_MILLIS),
+            )
+            delay(BootSettle.TICK_MILLIS)
+            spentMillis += BootSettle.TICK_MILLIS
         }
+    }
+
+    /**
+     * The armed universal retry, run the way the gate runs a payload install.
+     *
+     * Its own path rather than a flag on the payload one, because what it repeats is not what that gate
+     * resolves: this is the plan the failed attempt recorded - a KernelSU and a payload tier - and there is no
+     * cache, no Shizuku promise and no root-on-boot setting in it. What the two do share is everything that
+     * belongs to the *boot* rather than to a flow: the wake lock, the settle floor, one notification for the
+     * run, and a verdict at the end.
+     */
+    private suspend fun runUniversalBootRun(plan: UniversalPlan, bootToken: String) {
+        val wakeLock = acquireGateWakeLock()
+        try {
+            withTimeout(GATE_LIMIT_MILLIS) {
+                // The same settle floor, for the same reason: the exploit's timing is delicate, and a phone
+                // still finishing its boot is the wrong moment to patch a vendor library. It is also what
+                // gives the reboot the phone just did time to put the marker the last run armed out of reach.
+                awaitSettledFloor()
+                if (RootStatusProbe.isActive()) {
+                    // Root is already live, and the chain is RAM-only, so this is not a leftover of the run
+                    // being retried: there is nothing for this boot's retry to do.
+                    AutoRootSupport.markVerifiedForBoot(this@AutoRootService, bootToken)
+                    AppLog.info(AppLogTags.BOOT, "Universal retry skipped after the wait: KernelSU is active")
+                    return@withTimeout
+                }
+                if (RunInFlight.holder(this@AutoRootService) != null) {
+                    AppLog.warn(AppLogTags.BOOT, "Universal retry stood down: a run was in flight")
+                    finish(getString(R.string.autoroot_run_in_flight))
+                    return@withTimeout
+                }
+                runUniversalRun(plan, bootToken)
+            }
+        } catch (timeout: TimeoutCancellationException) {
+            AppLog.error(
+                AppLogTags.BOOT,
+                "Universal retry gave up after ${GATE_LIMIT_MILLIS / 1000} s without finishing",
+            )
+            finish(getString(R.string.autoroot_failed, getString(R.string.autoroot_timed_out)))
+        } catch (error: Throwable) {
+            val detail = error.message ?: error.javaClass.simpleName
+            AppLog.error(AppLogTags.BOOT, "Universal retry failed: $detail", error)
+            finish(getString(R.string.autoroot_failed, detail))
+        } finally {
+            releaseQuietly(wakeLock)
+        }
+    }
+
+    /** The run itself, with this service posting each stage and the verdict at the end. */
+    private suspend fun runUniversalRun(plan: UniversalPlan, bootToken: String) {
+        val model = InstallViewModel(application)
+        viewModel = model
+        progressJob = scope.launch {
+            model.state.collect { state ->
+                if (!state.busy) return@collect
+                val line = state.log.lineSequence().lastOrNull()?.take(MAX_NOTIFICATION_DETAIL)
+                notifyOngoing(
+                    message = state.message.ifBlank { line.orEmpty() },
+                    // The universal flow's own word for the stage: the chip is per-flow, and this is that
+                    // flow's boot run - calling its second stage a download is the other flow's word.
+                    chip = RunNotification.chipLabel(state.phase, RunKind.Universal),
+                    fraction = installProgress(state.phase, state.failure?.stage),
+                )
+            }
+        }
+        notifyOngoing(message = getString(R.string.autoroot_starting), chip = R.string.run_chip_starting)
+        // Offline, which is the whole reason a boot can run this flow at all: there is no feed to resolve and no
+        // download to wait for on a phone that has just restarted, so the run stages the daemon this phone
+        // already has and refuses - with the sentence about running once online first - when there is none.
+        model.runUniversalToCompletion(plan.flavor, plan.tier, offline = true)
+        progressJob?.cancel()
+        progressJob = null
+
+        val state = model.state.value
+        if (state.phase == InstallPhase.Installed) {
+            AutoRootSupport.markVerifiedForBoot(this, bootToken)
+            // The offer a payload install's boot run also makes, and for the same reason: KernelSU is loaded
+            // and its modules are not, because this happened in a userspace that was already built.
+            // The flow's own name, because this notification is the whole of what anyone sees of a boot run:
+            // "Root succeeded" is true of three different roots on this phone.
+            finish(
+                getString(R.string.autoroot_universal_succeeded, RunKind.Universal.flowName),
+                offerSoftReboot = true,
+            )
+            return
+        }
+        finish(
+            getString(
+                R.string.autoroot_failed,
+                state.message.ifBlank { getString(R.string.autoroot_timed_out) },
+            ),
+        )
     }
 
     /**
@@ -540,10 +697,20 @@ class AutoRootService : Service() {
             model.state.collect { state ->
                 if (!state.busy) return@collect
                 val line = state.log.lineSequence().lastOrNull()?.take(MAX_NOTIFICATION_DETAIL)
-                notifyOngoing(state.message.ifBlank { line.orEmpty() })
+                notifyOngoing(
+                    message = state.message.ifBlank { line.orEmpty() },
+                    // The phase's own word and the card's own fraction, because an unattended run is the one
+                    // nobody can open the app for: its notification is all of it there is to look at, and
+                    // [installProgress] being the bar the screen draws is what keeps the two the same story.
+                    chip = RunNotification.chipLabel(state.phase),
+                    fraction = installProgress(state.phase, state.failure?.stage),
+                )
             }
         }
-        notifyOngoing(getString(R.string.autoroot_starting))
+        notifyOngoing(
+            message = getString(R.string.autoroot_starting),
+            chip = R.string.run_chip_starting,
+        )
         model.runToCompletion(
             unattended = true,
             payloadOffline = true,
@@ -571,10 +738,11 @@ class AutoRootService : Service() {
             // what anyone sees of a boot install: with Use Shizuku on, a rooted phone and a message that
             // reads as if nothing was different is the setting being ignored without saying so.
             finish(
-                getString(
-                    if (withoutShell) R.string.autoroot_succeeded_without_shell
-                    else R.string.autoroot_succeeded,
-                ),
+                if (withoutShell) {
+                    getString(R.string.autoroot_succeeded_without_shell)
+                } else {
+                    getString(R.string.autoroot_succeeded, RunKind.Payload.flowName)
+                },
                 offerSoftReboot = true,
             )
             return
@@ -589,12 +757,37 @@ class AutoRootService : Service() {
         )
     }
 
-    private fun notifyOngoing(message: String) {
+    /**
+     * Says what the gate is doing, and asks the system to put it where a boot is actually watched.
+     *
+     * An unattended run is the case with nobody at the screen, so its notification is the whole of what
+     * anyone sees - and on Android 16 that means a live update: a chip in the status bar and a card at the
+     * top of the shade and on the lock screen. [RunNotification.live] is where the platform's rules for one
+     * are kept, and it is also what the run's own notification is built through, so the two cannot be a
+     * different shape for the same run.
+     *
+     * [chip] is the word the chip gets, and it is a parameter rather than something decided here because the
+     * two halves of a boot run are named differently: the gate's own waits are its own words, and a run under
+     * way is named by its phase - the same word, from the same place, the run's own notification uses.
+     */
+    private fun notifyOngoing(message: String, chip: Int, fraction: Float? = null) {
         if (stopping) return
-        getSystemService(NotificationManager::class.java).notify(
-            NOTIFICATION_ID,
-            buildNotification(message, ongoing = true),
-        )
+        val builder = buildNotification(message, ongoing = true)
+        RunNotification.live(builder, getString(chip), fraction)
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, builder.build())
+    }
+
+    /**
+     * How far a wait has come, as the fraction a live update's bar is drawn from.
+     *
+     * The bar would otherwise only fill while a run is under way, and the gate's two waits - the settle
+     * floor and the Shizuku window - are exactly the minutes a boot run spends with nothing else to look at.
+     * Each is measured against the window it was given rather than against a guess, and both are in the same
+     * unit: everything a countdown here is drawn from is millis.
+     */
+    private fun waitedFraction(leftMillis: Long, windowMillis: Long): Float {
+        val window = windowMillis.coerceAtLeast(1L)
+        return (1f - leftMillis.toFloat() / window).coerceIn(0f, 1f)
     }
 
     /**
@@ -618,7 +811,7 @@ class AutoRootService : Service() {
                 ongoing = false,
                 offerSoftReboot = offerSoftReboot,
                 answers = answers,
-            ),
+            ).build(),
         )
         stopForegroundCompat()
         stopSelf()
@@ -655,6 +848,10 @@ class AutoRootService : Service() {
      * that userspace is built again. The offer is the only way to do it without asking the user to know
      * which of the two restarts is the one that loads modules - and it is offered rather than performed
      * because it closes everything that is open, which is not something a background run gets to decide.
+     *
+     * The builder rather than the notification, because what the gate posts while it works is a live update
+     * and [RunNotification.live] applies that to a builder - see [notifyOngoing]. An outcome is not one, and
+     * [finish] is where the difference is made: it builds the same notification and stops there.
      */
     private fun buildNotification(
         message: String,
@@ -662,7 +859,7 @@ class AutoRootService : Service() {
         offerSoftReboot: Boolean = false,
         answers: ShizukuRefusalActions? = null,
     ) = NotificationCompat
-        .Builder(this, CHANNEL_ID)
+        .Builder(this, CHANNEL.id)
         .setSmallIcon(android.R.drawable.stat_sys_warning)
         .setContentTitle(
             getString(
@@ -737,7 +934,6 @@ class AutoRootService : Service() {
                 )
             }
         }
-        .build()
 
     /** An answer the notification offers, handed to the screen that can act on it. */
     private fun answerPendingIntent(requestCode: Int, answer: RunAnswer): PendingIntent =
@@ -749,17 +945,6 @@ class AutoRootService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-    private fun createChannel() {
-        getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_ID,
-                getString(R.string.autoroot_channel_name),
-                NotificationManager.IMPORTANCE_LOW,
-            ).apply { description = getString(R.string.autoroot_channel_description) },
-        )
-    }
-
-    @Suppress("DEPRECATION")
     private fun stopForegroundCompat() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_DETACH)
@@ -772,7 +957,16 @@ class AutoRootService : Service() {
     companion object {
         const val ACTION_CANCEL = "dev.busung.s25uroot.action.CANCEL_AUTO_ROOT"
 
-        private const val CHANNEL_ID = "auto_root"
+        /**
+         * The channel the gate reports on, and the one a refused start is reported on: see
+         * [BootServiceStart.ensureChannel] for why the second case can make it itself.
+         */
+        private val CHANNEL = BootServiceStart.Channel(
+            id = "auto_root",
+            nameRes = R.string.autoroot_channel_name,
+            descriptionRes = R.string.autoroot_channel_description,
+        )
+
         /** Also read by the notification's own action, so the offer can clear the result it acted on. */
         internal const val NOTIFICATION_ID = 0x42554f55
 
@@ -792,16 +986,24 @@ class AutoRootService : Service() {
 
         /** The most attempts that can be said to be different attempts at the same thing. */
         private const val SHIZUKU_START_ATTEMPTS = 3
-        private const val SETTLE_TICK_MILLIS = 1_000L
         private const val MAX_NOTIFICATION_DETAIL = 120
 
+        /**
+         * Starts the gate, which decides for itself whether this boot gets an automatic install.
+         *
+         * A boot broadcast is one of the places Android may refuse the start outright, and
+         * [BootServiceStart] answers that with a notification: a phone that reboots with an unrooted kernel and
+         * nothing in the shade is what the setting being switched off looks like from the outside.
+         */
         fun start(context: Context) {
-            val intent = Intent(context, AutoRootService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
+            BootServiceStart.start(
+                context = context,
+                service = AutoRootService::class.java,
+                channel = CHANNEL,
+                notificationId = NOTIFICATION_ID,
+                titleRes = R.string.autoroot_not_started_title,
+                textRes = R.string.autoroot_not_started,
+            )
         }
 
         fun stop(context: Context) {

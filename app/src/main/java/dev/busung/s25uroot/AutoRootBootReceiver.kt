@@ -56,15 +56,40 @@ class AutoRootBootReceiver : BroadcastReceiver() {
             }
         }
 
+        // The other way this boot can have been asked to get root, and the one that has to be considered
+        // before the install branch below gives up on the boot: on a phone rooted through the system-uid
+        // flow, the KernelSU that is about to be loaded comes from the helper's own run, so a boot with no
+        // root is exactly the boot that needs this. Started on the same quick reading as everything else
+        // here, and the gate asks again - see [DfrBootService].
+        //
+        // Not an `else` to the install below: it is its own way to gain root, asked for by its own setting.
+        // The settings no longer let both gates be on at once - turning one on turns the other off - so the
+        // attempt each keeps is for the states the settings cannot reach: a phone that was already carrying
+        // both when they became exclusive, and one whose flags an older build wrote. Whichever roots the
+        // phone first is the one the other then finds already done, and both read KernelSU before spending
+        // anything.
+        if (!rootActive && AppPreferences.rerootAtBoot(context)) {
+            AppLog.info(AppLogTags.BOOT, "A reroot at boot was asked for")
+            DfrBootService.start(context)
+        }
+
         if (rootActive) {
             AppLog.info(AppLogTags.BOOT, "Root is already active, so no install is started")
             return
         }
         // A one-shot retry armed from the run screen counts here too: those two are the only ways this
         // boot can have been asked for an install, and the gate is where either one is carried out.
+        // The universal root's own armed retry is a third way this boot can have been asked for an install,
+        // and neither of the two above covers it: it is a different flow with its own settings, so a phone
+        // whose only run has ever been a universal one has root-on-boot off and no payload retry armed - and
+        // would stand down here, never reaching the branch in the gate that knows how to run it.
         val bootRootMode = AppPreferences.bootRootMode(context)
         val retryArmed = AppPreferences.retryArmed(context)
-        if (!bootRootMode && !retryArmed) {
+        val universalArmed = AppPreferences.universalRetryPendingForBoot(context) != null
+        // The chain's standing switch, which asks for every boot rather than for one - the third way this boot
+        // can have been asked to gain root, and the one that needs no shell and no helper.
+        val universalBootRoot = AppPreferences.universalBootRoot(context)
+        if (!bootRootMode && !retryArmed && !universalArmed && !universalBootRoot) {
             AppLog.debug(
                 AppLogTags.BOOT,
                 "No install this boot: root on boot is off and no retry is armed",
@@ -73,7 +98,8 @@ class AutoRootBootReceiver : BroadcastReceiver() {
         }
         AppLog.info(
             AppLogTags.BOOT,
-            "A boot install was asked for (root on boot=$bootRootMode, retry armed=$retryArmed)",
+            "A boot install was asked for (root on boot=$bootRootMode, retry armed=$retryArmed, " +
+                "universal retry armed=$universalArmed, chain's boot gate=$universalBootRoot)",
         )
 
         // The boot id is the only thing that tells a real reboot from a userspace restart that

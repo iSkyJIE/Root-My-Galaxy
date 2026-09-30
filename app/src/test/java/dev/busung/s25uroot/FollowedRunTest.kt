@@ -95,7 +95,14 @@ class FollowedRunTest {
 
         assertTrue(
             "the running phase is no longer published, so the bar has nothing to draw from",
-            viewModel.contains("updateHistory { entry -> entry.copy(phase = phase) }"),
+            viewModel.contains("updateHistory { entry -> entry.copy(phase = phase, kind ="),
+        )
+        // And the flow with it, which is the other fact about the same run and the reason the two share a line:
+        // the kind was once written separately, and that write was the one that got forgotten - a universal
+        // run's record said `Payload`, so the history never marked it and a followed run drew the other flow.
+        assertTrue(
+            "the flow is not published with the phase, so a followed run cannot tell which flow it is",
+            viewModel.contains("kind = mutableState.value.kind"),
         )
         assertTrue(
             "a finished record keeps a phase, and a screen could draw a live bar for a run that is over",
