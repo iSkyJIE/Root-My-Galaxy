@@ -211,6 +211,39 @@ class RunKindTest {
     }
 
     @Test
+    fun `no run is started without taking the screen from a discovery in flight`() {
+        // This one is here because it happened, and it is the subtler half of "one run at a time". The screen
+        // on open runs a discovery - a probe and a catalog lookup - which publishes a whole install state when
+        // it finishes, and that state carries no flow and no log. It was claimed, and the payload flow claimed
+        // against it, but the universal run never did: so a discovery already in flight landed in the middle of
+        // a chain run and reset the flow to Payload. The record then said the run was a payload run, the
+        // history row named the payload flow's CVE for a DirtyFrag root, and the run's own opening lines were
+        // gone. A run therefore claims the screen at its start, whichever flow it is.
+        val viewModel = source("InstallViewModel.kt")
+        val universal = viewModel.substringAfter("fun startUniversalRun(")
+            .substringBefore("\n    /**")
+            .takeIf { it.isNotBlank() }
+            ?: error("InstallViewModel no longer has a startUniversalRun")
+        assertTrue(
+            "the universal run does not claim the screen, so a discovery in flight can write over it and " +
+                "reset the flow its record is labelled by",
+            universal.contains("publishClaim.claim()"),
+        )
+        assertTrue(
+            "the universal run no longer guards against another run of this view model",
+            universal.contains("if (installJob?.isActive == true) return"),
+        )
+        // And a run's log is its own: the record is written from this state, so a log left behind is the
+        // previous run's lines filed under the new one.
+        val history = viewModel.substringAfter("private fun startHistory()")
+            .substringBefore("\n    /**")
+        assertTrue(
+            "a new run inherits the previous run's log, so its record opens with another run's lines",
+            history.contains("log = \"\""),
+        )
+    }
+
+    @Test
     fun `the boot gate runs an armed universal retry before its own payload questions`() {
         val gate = source("AutoRootService.kt")
         val universal = gate.indexOf("AppPreferences.universalRetryPendingForBoot(this)")

@@ -514,6 +514,14 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
         offline: Boolean = false,
     ) {
         if (installJob?.isActive == true) return
+        // The discovery this view model runs on open is claimed, and its claim has to be *taken* by a run
+        // rather than waited out: it publishes after a probe and a network resolution, so a write that was
+        // already in flight lands in the middle of this run - and what it writes is a whole install state,
+        // which carries no flow and no log. That is what made a DirtyFrag run's record say `Payload` and
+        // what replaced the run's own lines with the probe: the flow is a fact about the run, and nothing
+        // that is not the run may write it. The payload flow has claimed here since it was written; the
+        // universal run simply never did.
+        publishClaim.claim()
         installJob = viewModelScope.launch {
             startHistory()
             // After startHistory, which clears it for every run.
@@ -2598,7 +2606,11 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
         // a universal one must not inherit its wording or its answers, and there is no other line every run
         // passes through. [startUniversalRun] changes it immediately after this returns - and the plan goes
         // with it, so a run that has not resolved one yet cannot be retried into the last run's.
-        mutableState.value = mutableState.value.copy(kind = RunKind.Payload, universalPlan = null)
+        //
+        // The log goes too, for the same reason and with a cost that has been paid: a run's record is written
+        // from this state, so a log left behind is the *previous* run's lines filed under the new one - which
+        // is how a universal run's record came to open with the payload flow's probe.
+        mutableState.value = mutableState.value.copy(kind = RunKind.Payload, universalPlan = null, log = "")
         val entry = historyStore.create()
         activeHistoryEntry = entry
         activeRunId = entry.id
