@@ -205,6 +205,7 @@
     <string name="autoroot_chip_shizuku">Shizuku</string>
     <string name="autoroot_run_in_flight">Skipped: another run was already in progress.</string>
     <string name="autoroot_starting">Starting install</string>
+    <string name="autoroot_universal_needs_run">Auto Root via DirtyFrag</string>
     <string name="autoroot_prior_install_required">Root on boot needs a saved payload.</string>
     <string name="autoroot_failed">Install failed: %1$s</string>
     <string name="autoroot_failed_at">Install failed at %1$s: %2$s</string>
@@ -239,6 +240,9 @@
     <string name="universal_wrong_abi">This exploit is arm64 only, and this phone shows %1$s.</string>
     <string name="universal_already_armed">This boot is already hooked. Reboot before running %1$s again : the exploit arms a marker only a reboot clears.</string>
     <string name="universal_daemon_failed">The payload\'s daemon could not be downloaded or prepared, so nothing was done.</string>
+    <!-- A boot run stages the daemon this phone already has, and that copy is checked first: it can be another
+         flavour\'s or another tier\'s since, which is the mix-up the flavour exists to prevent. -->
+    <string name="universal_cached_daemon_stale">The daemon staged on this phone is not the one its last run downloaded, so it cannot be staged again. Run the dirtyfrag root once with the network.</string>
     <string name="universal_not_live">Nothing on this phone confirms root: no /system/bin/su, and an app cannot read the kernel. The chain finished, but this boot is not rooted.</string>
     <string name="dfr_dmc_fix">Keep Odin reachable</string>
     <string name="dfr_dmc_fix_detail">Writes Samsung\'s DMC setting on every boot, so download mode stays available on the firmware that locks it behind a lock screen. Needs the helper installed.</string>
@@ -1126,6 +1130,13 @@ Hold Power and Volume Down together for 7 seconds to Reboot it from there.</stri
     <string name="settings_boot_root">Auto Root via Payload</string>
     <string name="settings_boot_root_summary">Run the install again after a reboot if root is not active.</string>
     <string name="settings_boot_root_needs_load">Root on boot needs Install KernelSU to be on.</string>
+    <!--
+      The third boot gate, and the only one that needs nothing else installed and nothing running. It is named
+      by the flow it runs, which is the exploit and its CVE - see RunKind.flowName - and not disabled with
+      KernelSU loading off: loading KernelSU is not a step of that flow, it is what the flow does.
+    -->
+    <string name="settings_universal_boot_root">Auto Root via DirtyFrag</string>
+    <string name="settings_universal_boot_root_summary">Run the root process again after a restart if root is not active. Uses the saved daemon, so no network is needed after reboot.</string>
     <string name="settings_battery">Battery</string>
     <string name="settings_battery_summary_restricted">Android is limiting this app. Runs may be delayed, or lose internet, when the screen is off.</string>
     <string name="settings_battery_summary_allowed">Unrestricted. Runs can use the internet while the screen is off.</string>

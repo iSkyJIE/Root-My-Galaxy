@@ -49,6 +49,7 @@ object AppPreferences {
     private const val UNIVERSAL_PLAN_FLAVOR = "universal_plan_flavor"
     private const val UNIVERSAL_PLAN_TIER = "universal_plan_tier"
     private const val UNIVERSAL_RETRY_BOOT = "universal_retry_boot"
+    private const val UNIVERSAL_BOOT_ROOT = "universal_boot_root"
     private const val SHIZUKU_BOOT_MODE = "shizuku_boot_mode"
     private const val BOOT_SETTLE_SECONDS = "boot_settle_seconds"
     private const val RUN_STALL_SECONDS = "run_stall_seconds"
@@ -389,7 +390,10 @@ object AppPreferences {
      */
     fun setBootRootMode(context: Context, enabled: Boolean) {
         val editor = prefs(context).edit().putBoolean(BOOT_ROOT_MODE, enabled)
-        if (enabled) editor.putBoolean(DFR_REROOT_AT_BOOT, false)
+        if (enabled) {
+            editor.putBoolean(DFR_REROOT_AT_BOOT, false)
+            editor.putBoolean(UNIVERSAL_BOOT_ROOT, false)
+        }
         editor.apply()
     }
 
@@ -412,7 +416,42 @@ object AppPreferences {
      */
     fun setRerootAtBoot(context: Context, enabled: Boolean) {
         val editor = prefs(context).edit().putBoolean(DFR_REROOT_AT_BOOT, enabled)
-        if (enabled) editor.putBoolean(BOOT_ROOT_MODE, false)
+        if (enabled) {
+            editor.putBoolean(BOOT_ROOT_MODE, false)
+            editor.putBoolean(UNIVERSAL_BOOT_ROOT, false)
+        }
+        editor.apply()
+    }
+
+    /**
+     * Whether a boot with no root should root itself with the chain, needing no helper and no shell.
+     *
+     * The third way a boot can be asked for root, and the one that fits this flow best: the payload gate loads
+     * a payload the phone already has and the helper's starts an app, while this one stages the daemon the last
+     * run left behind and drives the exploit from this APK alone - no Shizuku to be running, nothing installed
+     * first. Off by default like the other two.
+     *
+     * It is an alternative to both, not a companion: all three are unattended, they all decide what a boot with
+     * no root does, and the chain the last two run is the same chain - so two of them on is one boot, two runs
+     * racing for one kernel, and the winner being whichever reads the boot first. Each setter turns the other
+     * two off, and a boot has exactly one answer to what it should do about root.
+     *
+     * What it needs to work is a boot's worth of state rather than a switch: the daemon staged by an earlier
+     * run. [UniversalDaemonStore] is that record, and the gate refuses with a sentence when it is missing
+     * instead of resolving a feed a boot may not have.
+     */
+    fun universalBootRoot(context: Context): Boolean =
+        prefs(context).getBoolean(UNIVERSAL_BOOT_ROOT, false)
+
+    /**
+     * Turns the chain's boot gate on or off, and the other two gates off with it when this one comes on.
+     */
+    fun setUniversalBootRoot(context: Context, enabled: Boolean) {
+        val editor = prefs(context).edit().putBoolean(UNIVERSAL_BOOT_ROOT, enabled)
+        if (enabled) {
+            editor.putBoolean(BOOT_ROOT_MODE, false)
+            editor.putBoolean(DFR_REROOT_AT_BOOT, false)
+        }
         editor.apply()
     }
 

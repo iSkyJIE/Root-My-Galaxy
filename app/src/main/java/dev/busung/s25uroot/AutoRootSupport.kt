@@ -130,6 +130,25 @@ internal fun autoRootDecision(
     else -> AutoRootDecision.Run
 }
 
+/**
+ * Which plan a boot runs the chain with, from the two things that can ask for one.
+ *
+ * Pure, because the ordering *is* the rule and it is invisible in a diff: an armed retry is a tap the user made
+ * for a specific flavour and tier, and the standing switch runs whatever the phone last staged - so a boot that
+ * let the switch answer over the retry would run a different daemon than the one that was asked for, and would
+ * report the switch's plan while doing it. The retry wins whenever there is one; the switch answers only the
+ * boots nothing else asked about.
+ *
+ * Null from the switch with nothing recorded is the third state and not an error: it is the phone where the
+ * switch has been turned on and no run has ever staged a daemon, and the caller says exactly that rather than
+ * resolving a feed a boot may not have.
+ */
+internal fun universalBootPlan(
+    armedRetry: UniversalPlan?,
+    bootRootEnabled: Boolean,
+    recorded: UniversalPlan?,
+): UniversalPlan? = armedRetry ?: recorded?.takeIf { bootRootEnabled }
+
 internal object AutoRootSupport {
     private const val RECEIPT = "install_receipt"
     private const val RECEIPT_VERIFIED = "verified"
@@ -151,6 +170,16 @@ internal object AutoRootSupport {
      * `BOOT_COMPLETED` cannot spend it twice.
      */
     private const val LAST_REROOT_ATTEMPT_TOKEN = "last_reroot_attempt_boot_id"
+
+    /**
+     * The chain's own boot run, in the same store and with the same meaning.
+     *
+     * A third token, for the reason the second one exists: a payload install, a helper reroot and a chain run
+     * are three different things that a boot can spend its one attempt on, and the payload flow's token is what
+     * consumes an armed payload retry. Marking a chain run as a payload attempt would take back a request this
+     * boot never honoured - and would tell the payload gate that this boot had already tried, which it had not.
+     */
+    private const val LAST_UNIVERSAL_ATTEMPT_TOKEN = "last_universal_attempt_boot_id"
 
     fun currentBootToken(): String? = kernelBootToken()
 
@@ -260,6 +289,24 @@ internal object AutoRootSupport {
         if (preferences.getString(LAST_REROOT_ATTEMPT_TOKEN, null) == bootToken) return false
         return preferences.edit()
             .putString(LAST_REROOT_ATTEMPT_TOKEN, bootToken)
+            .commit()
+    }
+
+    /**
+     * Claims this boot's single chain run.
+     *
+     * Claimed before the run rather than after, like the payload flow's, because the two things that could
+     * start one are two receivers waking up to the same broadcast. Claimed only by the standing switch: an armed
+     * retry is consumed by its own arming, which is a request for one specific boot, and taking a token as well
+     * would leave a boot that armed two retries - which nothing allows, and nothing enforces either - unable to
+     * run the second one.
+     */
+    @Synchronized
+    fun claimUniversalAttempt(context: Context, bootToken: String): Boolean {
+        val preferences = context.getSharedPreferences(STATE, Context.MODE_PRIVATE)
+        if (preferences.getString(LAST_UNIVERSAL_ATTEMPT_TOKEN, null) == bootToken) return false
+        return preferences.edit()
+            .putString(LAST_UNIVERSAL_ATTEMPT_TOKEN, bootToken)
             .commit()
     }
 

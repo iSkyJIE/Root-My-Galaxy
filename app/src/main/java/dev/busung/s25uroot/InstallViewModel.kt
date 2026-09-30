@@ -489,7 +489,20 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
      * `LoadingKernelSu`), so the screen that draws a payload run draws this one with no change at all: the
      * step rows, the progress and the Stop button come from the phase the state is in.
      */
-    fun startUniversalRun(flavor: KernelSuFlavor, tier: PayloadTier, unattended: Boolean = false) {
+    fun startUniversalRun(
+        flavor: KernelSuFlavor,
+        tier: PayloadTier,
+        unattended: Boolean = false,
+        /**
+         * Resolve the daemon from what this phone already staged instead of from the sources.
+         *
+         * A boot run's only option, and the same trade the payload flow's boot run makes with its cache: a
+         * phone that has just restarted may have no network, and a run that waits for a download at that point
+         * is a run that is not there when the user looks. A refusal here is the sentence about running once
+         * online first - see [UniversalRootRun.cachedPlan] - rather than a silent fall back to the feed.
+         */
+        offline: Boolean = false,
+    ) {
         if (installJob?.isActive == true) return
         installJob = viewModelScope.launch {
             startHistory()
@@ -549,7 +562,14 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             // check would leave the row above it lit while this one worked.
             setPhase(InstallPhase.Downloading, app.getString(R.string.universal_step_payload))
             val plan = runCatching {
-                withContext(Dispatchers.IO) { UniversalRootRun.plan(app, flavor, tier) }
+                withContext(Dispatchers.IO) {
+                    // A boot run stages what this phone already has, and resolves the sources only when it has
+                    // never staged anything - see [UniversalRootRun.bootPlan], which is where the two are told
+                    // apart. Everything else reads the sources, because what the feed says today is the point of
+                    // running by hand.
+                    if (offline) UniversalRootRun.bootPlan(app, flavor, tier)
+                    else UniversalRootRun.plan(app, flavor, tier)
+                }
             }.getOrElse { error ->
                 failUniversal(
                     UniversalStage.Payload,
@@ -882,8 +902,13 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
      * lock, and [startUniversalRun] is fire-and-forget because the screen it was written for has nothing to do
      * afterwards but draw.
      */
-    suspend fun runUniversalToCompletion(flavor: KernelSuFlavor, tier: PayloadTier) {
-        startUniversalRun(flavor, tier, unattended = true)
+    suspend fun runUniversalToCompletion(
+        flavor: KernelSuFlavor,
+        tier: PayloadTier,
+        /** A boot run: see [startUniversalRun]'s own parameter, which this passes on. */
+        offline: Boolean = false,
+    ) {
+        startUniversalRun(flavor, tier, unattended = true, offline = offline)
         installJob?.join()
     }
 

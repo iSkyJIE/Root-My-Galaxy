@@ -246,6 +246,7 @@ class MainActivity : ComponentActivity() {
     private var payloadSources by mutableStateOf<List<PayloadSource>>(emptyList())
     private var bootRootMode by mutableStateOf(false)
     private var rerootAtBoot by mutableStateOf(false)
+    private var universalBootRoot by mutableStateOf(false)
     private var dmcFix by mutableStateOf(false)
     private var armedRetry by mutableStateOf<ArmedRetry?>(null)
 
@@ -389,6 +390,7 @@ class MainActivity : ComponentActivity() {
         payloadSources = AppPreferences.payloadSources(this)
         bootRootMode = AppPreferences.bootRootMode(this)
         rerootAtBoot = AppPreferences.rerootAtBoot(this)
+        universalBootRoot = AppPreferences.universalBootRoot(this)
         dmcFix = AppPreferences.dmcFix(this)
         armedRetry = readArmedRetry()
         retryPayload = readArmedRetryPayload()
@@ -420,6 +422,7 @@ class MainActivity : ComponentActivity() {
                     payloadSources = payloadSources,
                     bootRootMode = bootRootMode,
                     rerootAtBoot = rerootAtBoot,
+                    universalBootRoot = universalBootRoot,
                     dmcFix = dmcFix,
                     armedRetry = armedRetry,
                     retryPayload = retryPayload,
@@ -475,9 +478,12 @@ class MainActivity : ComponentActivity() {
                     onBootRootModeChanged = { enabled ->
                         AppPreferences.setBootRootMode(this, enabled)
                         bootRootMode = enabled
-                        // The preference turns the helper's gate off with this one, so its row has to move
-                        // with this one rather than keep showing what the phone no longer holds.
-                        if (enabled) rerootAtBoot = false
+                        // The preference turns the other two gates off with this one, so their rows have to
+                        // move with it rather than keep showing what the phone no longer holds.
+                        if (enabled) {
+                            rerootAtBoot = false
+                            universalBootRoot = false
+                        }
                         // Either way a gate that is already waiting has to be reached, not just the next
                         // boot: a foreground service left running would install - or start the helper -
                         // anyway. Turning this one on stops the helper's gate, which is the alternative it
@@ -491,14 +497,33 @@ class MainActivity : ComponentActivity() {
                     onRerootAtBootChanged = { enabled ->
                         AppPreferences.setRerootAtBoot(this, enabled)
                         rerootAtBoot = enabled
-                        // Same as the install gate's own toggle: the preference turns the other gate off,
-                        // so its row moves too.
-                        if (enabled) bootRootMode = false
+                        // Same as the install gate's own toggle: the preference turns the other two gates
+                        // off, so their rows move too.
+                        if (enabled) {
+                            bootRootMode = false
+                            universalBootRoot = false
+                        }
                         // The same reach the install gate's own toggle has, for the same reason: a gate
                         // that is already waiting on a shell would otherwise start the helper minutes
                         // after the user turned the setting that asked for it off - and turning this one
                         // on stops the install gate, which is the alternative it just replaced.
                         if (enabled) AutoRootService.stop(this) else DfrBootService.stop(this)
+                    },
+                    onUniversalBootRootChanged = { enabled ->
+                        AppPreferences.setUniversalBootRoot(this, enabled)
+                        universalBootRoot = enabled
+                        // Same as the other two toggles, in both directions: the preference turns the other
+                        // two gates off, so their rows move with this one.
+                        if (enabled) {
+                            bootRootMode = false
+                            rerootAtBoot = false
+                        }
+                        // And the same reach: a gate that is already waiting has to be reached, not just the
+                        // next boot. Turning this one on stops the helper's gate as well, because that is one
+                        // of the two alternatives it just replaced - and the install gate's service is the one
+                        // the chain's own branch runs in, so it is stopped either way.
+                        if (enabled) DfrBootService.stop(this)
+                        AutoRootService.stop(this)
                     },
                     // Nothing else moves with the D2 fix's switch: it is not a boot gate, so it neither
                     // takes the other gate's place nor stops a service. What it becomes is the value the
@@ -782,6 +807,7 @@ private fun RootApp(
     payloadSources: List<PayloadSource>,
     bootRootMode: Boolean,
     rerootAtBoot: Boolean,
+    universalBootRoot: Boolean,
     dmcFix: Boolean,
     armedRetry: ArmedRetry?,
     retryPayload: CachedPayload?,
@@ -808,6 +834,7 @@ private fun RootApp(
     onShizukuModeChanged: (Boolean) -> Unit,
     onPayloadSourcesChanged: (List<PayloadSource>) -> Unit,
     onBootRootModeChanged: (Boolean) -> Unit,
+    onUniversalBootRootChanged: (Boolean) -> Unit,
     onRestartAfterRootChanged: (Boolean) -> Unit,
     onShizukuBootModeChanged: (Boolean) -> Unit,
     onBootSettleChanged: (Int) -> Unit,
@@ -1497,6 +1524,7 @@ private fun RootApp(
                             payloadSources = payloadSources,
                             bootRootMode = bootRootMode,
                             rerootAtBoot = rerootAtBoot,
+                            universalBootRoot = universalBootRoot,
                             dmcFix = dmcFix,
                             restartAfterRoot = restartAfterRoot,
                             shizukuBootMode = shizukuBootMode,
@@ -1520,6 +1548,7 @@ private fun RootApp(
                             onShizukuModeChanged = onShizukuModeChanged,
                             onPayloadSourcesChanged = onPayloadSourcesChanged,
                             onBootRootModeChanged = onBootRootModeChanged,
+                            onUniversalBootRootChanged = onUniversalBootRootChanged,
                             onRestartAfterRootChanged = onRestartAfterRootChanged,
                             onShizukuBootModeChanged = onShizukuBootModeChanged,
                             onBootSettleChanged = onBootSettleChanged,
@@ -4261,6 +4290,7 @@ private fun SettingsPage(
     payloadSources: List<PayloadSource>,
     bootRootMode: Boolean,
     rerootAtBoot: Boolean,
+    universalBootRoot: Boolean,
     dmcFix: Boolean,
     restartAfterRoot: Boolean,
     shizukuBootMode: Boolean,
@@ -4292,6 +4322,7 @@ private fun SettingsPage(
     onShizukuModeChanged: (Boolean) -> Unit,
     onPayloadSourcesChanged: (List<PayloadSource>) -> Unit,
     onBootRootModeChanged: (Boolean) -> Unit,
+    onUniversalBootRootChanged: (Boolean) -> Unit,
     onRestartAfterRootChanged: (Boolean) -> Unit,
     onShizukuBootModeChanged: (Boolean) -> Unit,
     onBootSettleChanged: (Int) -> Unit,
@@ -5693,6 +5724,30 @@ private fun SettingsPage(
                         clickHaptic(view)
                         if (enabled) onRequestNotificationPermission()
                         onBootRootModeChanged(enabled)
+                    },
+                )
+                // The third way a boot can be asked for root, directly under the payload gate because the two
+                // answer the same question and only one of them may be on: turning either one on turns the
+                // other off, which is why the rows sit together rather than in the two flows' own sections.
+                //
+                // It borrows the helper's arrows rather than the payload gate's bolt, because what it does is
+                // the same thing the helper's row does - run the chain again after a restart - and the two
+                // differ in what starts it, not in what happens. Deliberately not disabled with KernelSU
+                // loading off, unlike the two above: this flow does not load KernelSU as a step, loading it is
+                // the whole of what it does.
+                SettingsSwitchCard(
+                    icon = Icons.Rounded.Autorenew,
+                    title = stringResource(R.string.settings_universal_boot_root),
+                    description = stringResource(R.string.settings_universal_boot_root_summary),
+                    checked = universalBootRoot,
+                    position = SettingsCardPosition.Middle,
+                    onCheckedChange = { enabled ->
+                        clickHaptic(view)
+                        // Its account is its notification too - a boot run has no screen, which is the point -
+                        // so the permission is asked for at the moment the setting is turned on, on both of
+                        // the other gates' terms.
+                        if (enabled) onRequestNotificationPermission()
+                        onUniversalBootRootChanged(enabled)
                     },
                 )
                 // Follows the load decision for the same reason root on boot does: what it applies its

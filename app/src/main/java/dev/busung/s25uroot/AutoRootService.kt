@@ -129,6 +129,15 @@ class AutoRootService : Service() {
         // questions below are not its questions, and a phone that has never installed a payload would stand down
         // long before reaching it.
         val universalRetry = AppPreferences.universalRetryPendingForBoot(this)
+        // The other thing that can ask for a chain run: the standing switch, which asks for every boot. The two
+        // are resolved together - see [universalBootPlan] for why the retry wins - and what comes out is either
+        // the plan this boot runs, or null with nothing to run and nothing to say.
+        val universalBootRoot = AppPreferences.universalBootRoot(this)
+        val universalPlan = universalBootPlan(
+            armedRetry = universalRetry,
+            bootRootEnabled = universalBootRoot,
+            recorded = AppPreferences.universalPlan(this),
+        )
         if (universalRetry != null) {
             // Consumed here rather than where it was armed: this is the boot it was armed for, and a retry left
             // armed would run again on every boot after it.
@@ -138,7 +147,28 @@ class AutoRootService : Service() {
                 "Universal retry armed for this boot: ${universalRetry.flavor.label}, " +
                     "${universalRetry.tier.name} payload",
             )
-            runUniversalRetry(universalRetry, initialBootToken)
+        }
+        if (universalPlan != null) {
+            // The switch's run spends this boot's chain attempt, because a switch is a request for every boot
+            // and not for one: without the token, a userspace restart that re-emits `BOOT_COMPLETED` would run
+            // the chain twice in a kernel that the first run already patched. An armed retry is spent by its own
+            // arming - it names one boot - so it does not take the token as well, which is the rule
+            // [claimUniversalAttempt] documents.
+            if (universalRetry == null && !AutoRootSupport.claimUniversalAttempt(this, initialBootToken)) {
+                AppLog.info(AppLogTags.BOOT, "The chain's boot run was already claimed for this boot")
+                stopWithoutResult()
+                return
+            }
+            runUniversalBootRun(universalPlan, initialBootToken)
+            return
+        }
+        if (universalBootRoot) {
+            // The switch is on and there is nothing to run: no run has ever staged a daemon on this phone, so a
+            // boot has nothing to stage. Said rather than skipped - a boot that did nothing would look exactly
+            // like the switch having been ignored - and refused rather than resolved from a feed this boot may
+            // not have.
+            AppLog.warn(AppLogTags.BOOT, "The chain's boot gate needs one run first: no daemon is staged")
+            finish(getString(R.string.autoroot_universal_needs_run))
             return
         }
         // The authoritative reading, not the native one: this is the decision that spends the boot's
@@ -570,7 +600,7 @@ class AutoRootService : Service() {
      * belongs to the *boot* rather than to a flow: the wake lock, the settle floor, one notification for the
      * run, and a verdict at the end.
      */
-    private suspend fun runUniversalRetry(plan: UniversalPlan, bootToken: String) {
+    private suspend fun runUniversalBootRun(plan: UniversalPlan, bootToken: String) {
         val wakeLock = acquireGateWakeLock()
         try {
             withTimeout(GATE_LIMIT_MILLIS) {
@@ -625,7 +655,10 @@ class AutoRootService : Service() {
             }
         }
         notifyOngoing(message = getString(R.string.autoroot_starting), chip = R.string.run_chip_starting)
-        model.runUniversalToCompletion(plan.flavor, plan.tier)
+        // Offline, which is the whole reason a boot can run this flow at all: there is no feed to resolve and no
+        // download to wait for on a phone that has just restarted, so the run stages the daemon this phone
+        // already has and refuses - with the sentence about running once online first - when there is none.
+        model.runUniversalToCompletion(plan.flavor, plan.tier, offline = true)
         progressJob?.cancel()
         progressJob = null
 

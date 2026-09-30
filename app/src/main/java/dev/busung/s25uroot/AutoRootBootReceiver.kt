@@ -86,7 +86,10 @@ class AutoRootBootReceiver : BroadcastReceiver() {
         val bootRootMode = AppPreferences.bootRootMode(context)
         val retryArmed = AppPreferences.retryArmed(context)
         val universalArmed = AppPreferences.universalRetryPendingForBoot(context) != null
-        if (!bootRootMode && !retryArmed && !universalArmed) {
+        // The chain's standing switch, which asks for every boot rather than for one - the third way this boot
+        // can have been asked to gain root, and the one that needs no shell and no helper.
+        val universalBootRoot = AppPreferences.universalBootRoot(context)
+        if (!bootRootMode && !retryArmed && !universalArmed && !universalBootRoot) {
             AppLog.debug(
                 AppLogTags.BOOT,
                 "No install this boot: root on boot is off and no retry is armed",
@@ -96,7 +99,7 @@ class AutoRootBootReceiver : BroadcastReceiver() {
         AppLog.info(
             AppLogTags.BOOT,
             "A boot install was asked for (root on boot=$bootRootMode, retry armed=$retryArmed, " +
-                "universal retry armed=$universalArmed)",
+                "universal retry armed=$universalArmed, chain's boot gate=$universalBootRoot)",
         )
 
         // The boot id is the only thing that tells a real reboot from a userspace restart that

@@ -216,9 +216,18 @@ class RunKindTest {
                 "retry that never runs",
             receiver.contains("val universalArmed = AppPreferences.universalRetryPendingForBoot(context) != null"),
         )
+        // And the chain's standing switch, which is a third reason a boot can have been asked for a run - so
+        // the test above and this one are the two halves of the same rule: however a boot was asked, the
+        // receiver has to count it or the gate it starts never runs.
         assertTrue(
-            "the universal retry is not part of the receiver's decision to start the gate",
-            receiver.contains("if (!bootRootMode && !retryArmed && !universalArmed)"),
+            "the boot receiver does not count the chain's boot gate, so turning it on would do nothing",
+            receiver.contains("val universalBootRoot = AppPreferences.universalBootRoot(context)"),
+        )
+        assertTrue(
+            "a way a boot can be asked for root is missing from the receiver's decision to start the gate",
+            receiver.contains(
+                "if (!bootRootMode && !retryArmed && !universalArmed && !universalBootRoot)",
+            ),
         )
     }
 

@@ -206,6 +206,15 @@ internal object UniversalRootRun {
         /** The artifact to fetch. The only difference between the tiers at this level. */
         abstract val artifact: RemoteArtifact
 
+        /**
+     * Which tier resolved this, which is what a boot run has to ask for again.
+     *
+     * Carried rather than inferred from the class by the caller, because a boot run has to name a tier to
+     * [bootPlan] and the class is not something a preference can hold. For the two resolved tiers it is a
+     * constant; [Cached] reads the one its record was written with.
+         */
+        abstract val tier: PayloadTier
+
         /** One line naming exactly what will be staged, for the log and the confirmation. */
         abstract val description: String
 
@@ -217,6 +226,7 @@ internal object UniversalRootRun {
             override val flavor: KernelSuFlavor get() = profile.flavor
             override val version: String? get() = profile.kernelSuVersion
             override val artifact: RemoteArtifact get() = profile.kernelSu
+            override val tier: PayloadTier get() = PayloadTier.Device
             override val description: String
                 get() = "device payload: ${profile.displayName} (${profile.flavor.label})"
 
@@ -237,11 +247,34 @@ internal object UniversalRootRun {
             override val flavor: KernelSuFlavor get() = daemon.flavor
             override val version: String? get() = daemon.version
             override val artifact: RemoteArtifact get() = daemon.daemon
+            override val tier: PayloadTier get() = PayloadTier.Generic
             override val description: String
                 get() = "generic payload: ${daemon.flavor.label}, carrying ${daemon.coverage}"
             override val caveat: String
                 get() = "a shared build for every ${daemon.flavor.label} kernel in ${daemon.coverage}: the " +
                     "module it loads is chosen by the running kernel's KMI rather than built for this phone"
+        }
+
+        /**
+         * The daemon this phone already staged, for a boot that has no feed to resolve against.
+         *
+         * A third kind rather than a flag on the other two, because what it describes is genuinely a different
+         * thing: the other two are *resolutions* - a reading of what the sources publish right now, pinned to
+         * the revision they were read at - and this is a memory of one that has already been used. A caller that
+         * could not tell them apart could report "the sources publish X" about a daemon no source was asked
+         * about on this boot.
+         */
+        class Cached(val remembered: CachedUniversalDaemon) : Plan() {
+            override val flavor: KernelSuFlavor get() = remembered.flavor
+            override val version: String? get() = remembered.version
+            override val artifact: RemoteArtifact get() = remembered.artifact
+            override val tier: PayloadTier get() = remembered.tier
+            override val description: String
+                get() = "staged payload: the ${remembered.flavor.label} ${remembered.tier.name.lowercase()} " +
+                    "daemon this phone already has"
+            override val caveat: String
+                get() = "the daemon this device staged on an earlier run rather than one read from the sources " +
+                    "just now, which is what a boot run can use: nothing here resolves a feed"
         }
     }
 
@@ -290,6 +323,43 @@ internal object UniversalRootRun {
     }
 
     /**
+     * The plan a boot run uses: the daemon this phone already staged, or the sources when it has none.
+     *
+     * The whole reason a boot can run this flow offline. [plan] reads the sources - the catalog for the device
+     * tier, the generic feed for the other - and then downloads the daemon it chose, and neither half of that
+     * works on a phone that has just restarted with no connectivity. This names the file the last run left in the
+     * device-protected directory the shellcode reads, and asks nothing of the network.
+     *
+     * Two different noes, and the difference matters to whoever reads the log:
+     *
+     * - **nothing recorded** - a phone that has never staged a daemon, which is every phone whose last run was
+     *   on a build before this record existed - falls back to [plan], because that is exactly what a boot run did
+     *   before there was anything to stage. Resolving the sources there is not a regression, it is the previous
+     *   behaviour; a phone with no network fails with the resolution's own sentence, as it always could.
+     * - **recorded and wrong for this run** - another flavour's, another tier's, or a file that is no longer what
+     *   was verified - is thrown, and not papered over with a download: it means the record and the run disagree,
+     *   and the sentence names which of the three it is.
+     */
+    internal fun bootPlan(context: Context, flavor: KernelSuFlavor, tier: PayloadTier): Plan {
+        val remembered = UniversalDaemonStore.describe(context) ?: return plan(context, flavor, tier)
+        universalCacheRefusalReason(remembered, flavor, tier, daemonPath(context))?.let { reason ->
+            throw IllegalStateException("No staged payload: $reason")
+        }
+        return Plan.Cached(remembered)
+    }
+
+    /**
+     * Where the daemon the chain reads lives, which is also where a boot run's daemon already is.
+     *
+     * The app's own data directory rather than its `files` directory, and device-protected rather than
+     * credential-encrypted: `/data/data` is not mounted until the user unlocks, and a boot run of this flow is
+     * one of the two reasons the path is what it is. Named here rather than inline in [stage] because three
+     * things now have to agree about it - the staging, the record a boot run verifies against, and `libc.S`.
+     */
+    internal fun daemonPath(context: Context): File =
+        File(context.createDeviceProtectedStorageContext().filesDir.parentFile, DAEMON)
+
+    /**
      * Downloads the plan's daemon and puts it where the chain reads it, and makes it executable.
      *
      * The one path the shellcode knows is this app's own data directory, and placing the file there is the
@@ -300,20 +370,29 @@ internal object UniversalRootRun {
      * take it for a whole one. Overwritten every run.
      */
     internal fun stage(context: Context, plan: Plan, report: (String) -> Unit): File {
+        // The chain's own path: the app's data directory, not its `files` directory - where the regular
+        // flow's copies go - and not the temp directory, which no app may write on this platform. See
+        // [daemonPath] for why it is that directory and that storage.
+        val destination = daemonPath(context)
+
+        // A boot run stages what is already here. Nothing is downloaded and nothing is copied - the file is
+        // the destination - but it is still checked against the digest the feed declared, because the copy on
+        // the phone could be another flavour's from a run since, and staging a daemon built for a different
+        // manager is the mix-up the flavour exists to prevent.
+        if (plan is Plan.Cached) {
+            require(fileMatchesArtifact(destination, plan.artifact)) {
+                context.getString(R.string.universal_cached_daemon_stale)
+            }
+            destination.setExecutable(true, false)
+            report("daemon: the copy this phone staged earlier (${plan.artifact.sha256?.take(12) ?: "no digest"})")
+            return destination
+        }
+
         val repository = PayloadRepository(context)
         // The daemon alone, for both tiers. This path's exploit is the chain compiled into this APK, so a
         // device entry's exploit artifact would be fetched, verified and thrown away - and a failure in that
         // download would stop a run that never uses it.
         val source = repository.downloadDaemon(plan.artifact, plan.flavor) { line -> report(line) }
-
-        // The chain's own path: the app's data directory, not its `files` directory - where the regular
-        // flow's copies go - and not the temp directory, which no app may write on this platform.
-        // Device-protected storage, matching the path the shellcode reads (`libc.S`'s `ksud_path`). `/data/data`
-        // is credential-encrypted and is not mounted until the user unlocks, so a boot-run retry - which is one
-        // of the two things this path is for - could not write the daemon there at all. The two must move
-        // together: a file placed in one storage and read from the other is a bind mount with no source, and
-        // that failure is silent.
-        val destination = File(context.createDeviceProtectedStorageContext().filesDir.parentFile, DAEMON)
         val temporary = File(destination.path + ".tmp")
         source.inputStream().use { input ->
             temporary.outputStream().use { output -> input.copyTo(output) }
@@ -323,6 +402,10 @@ internal object UniversalRootRun {
             error("could not move the daemon into place")
         }
         destination.setExecutable(true, false)
+        // Recorded so the next boot can stage this same daemon without a feed. After the rename, so a record can
+        // never name a file a killed run left half-written, and only from a plan that came from a source - this
+        // branch - so the record can only ever describe bytes the enabled sources published.
+        UniversalDaemonStore.publish(context, plan, destination)
         return destination
     }
 
