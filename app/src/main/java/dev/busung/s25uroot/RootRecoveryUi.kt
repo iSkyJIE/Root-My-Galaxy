@@ -58,7 +58,16 @@ private data class RecoveryMessage(
  */
 @Composable
 internal fun RootRecoverySection(
-    onBootRootModeChanged: (Boolean) -> Unit,
+    /**
+     * Asks the screen holding the root gates to re-read them all.
+     *
+     * A request rather than a value, because reboot-and-unroot moves **three** preferences and this section
+     * reads none of them: it hands back the fact that they changed, and the page that draws the three switches
+     * re-reads them from storage. An earlier shape passed the payload gate's new value here, which was enough
+     * while that was the only gate the action touched, and would now leave the other two switches drawn as on
+     * over a phone that had already turned them off.
+     */
+    onRootGatesChanged: () -> Unit,
     /** False when runs are told not to load KernelSU, which is what these actions consume. */
     kernelSuLoadingEnabled: Boolean = true,
     /** Opens a settings card by its target: this section lives in the list that holds that card. */
@@ -85,11 +94,9 @@ internal fun RootRecoverySection(
         running = tool
         scope.launch {
             val outcome = runRecoveryAction(context, tool)
-            // The stored state is the one the screen follows, so a refusal puts root on boot back
-            // on screen as well as on disk, and an accepted one leaves both off.
-            if (tool == RecoveryTool.RebootAndUnroot) {
-                onBootRootModeChanged(AppPreferences.bootRootMode(context))
-            }
+            // The stored state is the one the screen follows, so a refusal puts back on screen whatever is
+            // back on disk, and an accepted one leaves the gates off.
+            if (tool == RecoveryTool.RebootAndUnroot) onRootGatesChanged()
             report(tool, outcome)
             running = null
         }
@@ -215,7 +222,7 @@ internal fun RecoveryActionButton(
     role: AppActionRole,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    onBootRootModeChanged: (Boolean) -> Unit = {},
+    onRootGatesChanged: () -> Unit = {},
     /**
      * Opens a settings card by its target, for a refusal this app's own protection caused.
      *
@@ -266,9 +273,7 @@ internal fun RecoveryActionButton(
                             running = true
                             scope.launch {
                                 val outcome = runRecoveryAction(context, tool)
-                                if (tool == RecoveryTool.RebootAndUnroot) {
-                                    onBootRootModeChanged(AppPreferences.bootRootMode(context))
-                                }
+                                if (tool == RecoveryTool.RebootAndUnroot) onRootGatesChanged()
                                 message = RecoveryMessage(
                                     title = context.getString(tool.titleRes()),
                                     detail = recoveryOutcomeMessage(context, tool, outcome),

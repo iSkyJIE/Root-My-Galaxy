@@ -388,9 +388,7 @@ class MainActivity : ComponentActivity() {
         kernelsuFlavor = AppPreferences.kernelsuFlavor(this)
         shizukuMode = AppPreferences.shizukuMode(this)
         payloadSources = AppPreferences.payloadSources(this)
-        bootRootMode = AppPreferences.bootRootMode(this)
-        rerootAtBoot = AppPreferences.rerootAtBoot(this)
-        universalBootRoot = AppPreferences.universalBootRoot(this)
+        refreshRootGates()
         dmcFix = AppPreferences.dmcFix(this)
         armedRetry = readArmedRetry()
         retryPayload = readArmedRetryPayload()
@@ -475,6 +473,7 @@ class MainActivity : ComponentActivity() {
                         AppPreferences.setPayloadSources(this, sources)
                         payloadSources = sources
                     },
+                    onRootGatesChanged = ::refreshRootGates,
                     onBootRootModeChanged = { enabled ->
                         AppPreferences.setBootRootMode(this, enabled)
                         bootRootMode = enabled
@@ -697,6 +696,21 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    /**
+     * Re-reads the three root gates into the screen's own copies of them.
+     *
+     * Each gate is a preference with a switch drawn over it, and two things write those preferences without
+     * going through the switch: each setter turns the other two off, and reboot-and-unroot turns all three off
+     * before a reboot it is about to perform. So there is one place that reads them - this one, used by the
+     * screens that have just moved one and by the launch - rather than each caller keeping its own idea of the
+     * gates it did not touch.
+     */
+    private fun refreshRootGates() {
+        bootRootMode = AppPreferences.bootRootMode(this)
+        rerootAtBoot = AppPreferences.rerootAtBoot(this)
+        universalBootRoot = AppPreferences.universalBootRoot(this)
+    }
+
     /** The retry this device has armed, read together with the boot it would run in. */
     private fun readArmedRetry(): ArmedRetry? =
         ArmedRetry.of(AppPreferences.retryArmedInBoot(this), kernelBootToken())
@@ -834,6 +848,11 @@ private fun RootApp(
     onShizukuModeChanged: (Boolean) -> Unit,
     onPayloadSourcesChanged: (List<PayloadSource>) -> Unit,
     onBootRootModeChanged: (Boolean) -> Unit,
+    /**
+     * Asks the shell to re-read all three root gates, for the one action that moves more than one of them:
+     * reboot-and-unroot clears the payload gate, the helper's and the chain's together.
+     */
+    onRootGatesChanged: () -> Unit,
     onUniversalBootRootChanged: (Boolean) -> Unit,
     onRestartAfterRootChanged: (Boolean) -> Unit,
     onShizukuBootModeChanged: (Boolean) -> Unit,
@@ -1548,6 +1567,7 @@ private fun RootApp(
                             onShizukuModeChanged = onShizukuModeChanged,
                             onPayloadSourcesChanged = onPayloadSourcesChanged,
                             onBootRootModeChanged = onBootRootModeChanged,
+                            onRootGatesChanged = onRootGatesChanged,
                             onUniversalBootRootChanged = onUniversalBootRootChanged,
                             onRestartAfterRootChanged = onRestartAfterRootChanged,
                             onShizukuBootModeChanged = onShizukuBootModeChanged,
@@ -4322,6 +4342,11 @@ private fun SettingsPage(
     onShizukuModeChanged: (Boolean) -> Unit,
     onPayloadSourcesChanged: (List<PayloadSource>) -> Unit,
     onBootRootModeChanged: (Boolean) -> Unit,
+    /**
+     * Asks the shell to re-read all three root gates, for the one action that moves more than one of them:
+     * reboot-and-unroot clears the payload gate, the helper's and the chain's together.
+     */
+    onRootGatesChanged: () -> Unit,
     onUniversalBootRootChanged: (Boolean) -> Unit,
     onRestartAfterRootChanged: (Boolean) -> Unit,
     onShizukuBootModeChanged: (Boolean) -> Unit,
@@ -5846,9 +5871,10 @@ private fun SettingsPage(
         if (SettingsSection.Recovery in openSections) item {
             SettingsSectionBody {
                 RootRecoverySection(
-                    // Root on boot is what would bring root back, so it is turned off before the reboot
-                    // is asked for and this screen has to follow whatever was stored.
-                    onBootRootModeChanged = onBootRootModeChanged,
+                    // The gates are what would bring root back, so they are all turned off before the reboot
+                    // is asked for and this screen has to follow whatever ends up stored - which is the three
+                    // of them, through the one place that reads them.
+                    onRootGatesChanged = onRootGatesChanged,
                     // Every action here consumes the root a verified load installed, so with loading
                     // switched off they are not offered as things that will work.
                     kernelSuLoadingEnabled = loadKernelSu,

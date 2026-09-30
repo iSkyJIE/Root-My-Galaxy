@@ -110,7 +110,7 @@ internal suspend fun runRecoveryAction(context: Context, tool: RecoveryTool): Re
                         refusalDetail,
                     )
                 }
-                rebootAndUnrootKeepingTheSetting(
+                rebootAndUnrootKeepingTheGates(
                     context = context,
                     shell = shell,
                     bootToken = bootToken,
@@ -155,7 +155,7 @@ internal suspend fun runRecoveryAction(context: Context, tool: RecoveryTool): Re
                         bootToken = bootToken,
                         capabilities = capabilities,
                     )
-                    RecoveryTool.RebootAndUnroot -> rebootAndUnrootKeepingTheSetting(
+                    RecoveryTool.RebootAndUnroot -> rebootAndUnrootKeepingTheGates(
                         context = context,
                         shell = rootShell,
                         bootToken = bootToken,
@@ -177,26 +177,47 @@ internal suspend fun runRecoveryAction(context: Context, tool: RecoveryTool): Re
     }
 
 /**
- * Reboots with root on boot cleared, and puts the setting back if the reboot was refused.
+ * Which gates are on after this action has asked the phone to reboot.
  *
- * The previous value is read before anything is written, and that is the whole point of this being a
- * function rather than two lines at each call site: the setting is cleared so a reboot that happened
- * first cannot come back rooted, not so the user's choice can be thrown away. An earlier version
- * restored `true` unconditionally, which meant a phone whose root on boot was off had it switched back
- * on by a *refused* reboot - a refusal being the likely outcome on the device that reaches for this
- * action, since it needs a root shell that a failed run usually does not have. The next boot then
- * rooted a phone nobody had asked to root, with nothing on screen to say why.
+ * Pure, because the rule is the whole of what can go wrong here and it is one line otherwise: what was on
+ * comes back **only** if the reboot was refused. An earlier version of this cleared the payload gate and
+ * restored `true` unconditionally, which meant a phone whose root on boot was off had it switched back on by
+ * a *refused* reboot - a refusal being the likely outcome on the device that reaches for this action, since
+ * it needs a root shell that a failed run usually does not have. The next boot then rooted a phone nobody had
+ * asked to root, with nothing on screen to say why.
+ *
+ * An accepted request leaves [RootGates.none] rather than "whatever the phone now says", because the gate that
+ * was cleared is cleared: the reboot is the point, and the whole promise of this action is that the phone
+ * comes back unrooted.
  */
-private suspend fun rebootAndUnrootKeepingTheSetting(
+internal fun gatesAfterRebootRequest(was: RootGates, accepted: Boolean): RootGates =
+    if (accepted) RootGates.none else was
+
+/**
+ * Reboots with every root gate cleared, and puts them back if the reboot was refused.
+ *
+ * The previous values are read before anything is written, and that is the whole point of this being a
+ * function rather than two lines at each call site: they are cleared so a reboot that happened first cannot
+ * come back rooted, not so the user's choices can be thrown away.
+ *
+ * **All three**, which is the half that was missing: the action's promise is that the phone comes back
+ * unrooted, and it cleared only the payload gate - so a phone whose root was armed by the helper's gate or by
+ * the chain's gate ran this action, rebooted, and came back rooted. The three are written together for the
+ * same reason: a gate added later cannot be forgotten here without this function changing, and the restore
+ * does not go through the setters because each of those turns the other two off (see [RootGates]).
+ */
+private suspend fun rebootAndUnrootKeepingTheGates(
     context: Context,
     shell: (String) -> ShizukuController.ShellResult,
     bootToken: String,
     requiresRoot: Boolean,
 ): RecoveryOutcome {
-    val wasEnabled = AppPreferences.bootRootMode(context)
-    AppPreferences.setBootRootMode(context, false)
+    val was = AppPreferences.rootGates(context)
+    AppPreferences.setRootGates(context, RootGates.none)
     val outcome = RootRecovery.rebootAndUnroot(shell, bootToken, requiresRoot)
-    if (!outcome.accepted) AppPreferences.setBootRootMode(context, wasEnabled)
+    // Written either way, not only on a refusal: an accepted reboot leaves them off, and writing that is what
+    // makes the state on disk the state this function decided rather than whatever a screen happened to leave.
+    AppPreferences.setRootGates(context, gatesAfterRebootRequest(was, outcome.accepted))
     return outcome
 }
 

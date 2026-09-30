@@ -30,6 +30,30 @@ enum class AppThemeMode(val storedValue: String) {
     }
 }
 
+/**
+ * The three gates that would root the next boot, as one value.
+ *
+ * Read and written together by the one action that has to take all of them away: the recovery screen's
+ * reboot-and-unroot clears whatever would bring root back before a reboot it is about to perform, and has to
+ * put back exactly what was there if that reboot is refused. As a set rather than three flags because the
+ * question that action asks is "would the next boot root itself", and because a gate added later must not be
+ * able to miss it. That is also why the restore is not three setter calls: each setter turns the other two
+ * off, so a phone that carried two flags would silently lose one under a button that promised not to.
+ */
+internal data class RootGates(
+    val payload: Boolean,
+    val helper: Boolean,
+    val universal: Boolean,
+) {
+    /** Whether any gate would root the next boot. */
+    val any: Boolean get() = payload || helper || universal
+
+    companion object {
+        /** All three off, which is what a boot nobody has asked to root looks like. */
+        val none = RootGates(payload = false, helper = false, universal = false)
+    }
+}
+
 object AppPreferences {
     private const val PREFERENCES = "appearance"
     private const val ACCENT_COLOR = "accent_color"
@@ -453,6 +477,30 @@ object AppPreferences {
             editor.putBoolean(DFR_REROOT_AT_BOOT, false)
         }
         editor.apply()
+    }
+
+    /** The three gates as they stand, for the one caller that has to put them back exactly. */
+    internal fun rootGates(context: Context): RootGates = RootGates(
+        payload = bootRootMode(context),
+        helper = rerootAtBoot(context),
+        universal = universalBootRoot(context),
+    )
+
+    /**
+     * Sets the three gates together, in one commit and without the exclusivity the setters apply.
+     *
+     * The rule the individual setters enforce - turning one on turns the other two off - must not apply here,
+     * because this is a *restore*: a phone that carried two flags (an older build could write that, and both
+     * gates' comments say so) would silently lose one, and the caller would have moved the user's configuration
+     * under a button that promised not to. Off is written the same way as on, so a caller cannot leave a gate
+     * behind by taking one away - which is the whole reason this exists rather than three setter calls.
+     */
+    internal fun setRootGates(context: Context, gates: RootGates) {
+        prefs(context).edit()
+            .putBoolean(BOOT_ROOT_MODE, gates.payload)
+            .putBoolean(DFR_REROOT_AT_BOOT, gates.helper)
+            .putBoolean(UNIVERSAL_BOOT_ROOT, gates.universal)
+            .commit()
     }
 
     /**

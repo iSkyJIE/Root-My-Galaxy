@@ -1,5 +1,6 @@
 package dev.busung.s25uroot
 
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -13,8 +14,8 @@ private const val SUMMARY = "/data/local/tmp/.rmgnext-reboot-wipe"
 /**
  * The one action that unroots *and* cleans up.
  *
- * KernelSU lives in the running kernel, so the restart is what removes root and the *root on boot*
- * setting is what would bring it back. What is left is everything on disk that says the phone was
+ * KernelSU lives in the running kernel, so the restart is what removes root and the three *root gates*
+ * are what would bring it back. What is left is everything on disk that says the phone was
  * rooted: `/data/adb`, whose module store, superuser grants and daemon all live there, and the shared
  * temp directory every root solution writes into. These tests hold the three things that make emptying
  * them safe rather than merely destructive - that nothing is deleted through a mount point, that the
@@ -264,4 +265,92 @@ class RebootUnrootWipeTest {
 
         assertFalse(outcome.accepted)
     }
+
+    // --- the gates this action takes away ---------------------------------------------------------------
+
+    @Test
+    fun `every gate that would root the next boot is cleared`() {
+        // The action's promise is that the phone comes back unrooted, and it used to clear only the payload
+        // gate: a phone whose root was armed by the helper's gate or by the chain's gate ran this action,
+        // rebooted, and came back rooted. Held against the source rather than by running it, because the three
+        // preferences are Android storage - what this can check is that the action reaches all three, and the
+        // decision itself is `gatesAfterRebootRequest` below.
+        val actions = source("RecoveryActions.kt")
+
+        assertTrue(
+            "reboot and unroot no longer reads the gates as one value, so one of them can be left behind",
+            actions.contains("AppPreferences.rootGates(context)"),
+        )
+        assertTrue(
+            "reboot and unroot clears something narrower than all three gates",
+            actions.contains("AppPreferences.setRootGates(context, RootGates.none)"),
+        )
+    }
+
+    @Test
+    fun `the gates come back only when the reboot was refused`() {
+        val single = listOf(
+            RootGates(payload = true, helper = false, universal = false),
+            RootGates(payload = false, helper = true, universal = false),
+            RootGates(payload = false, helper = false, universal = true),
+        )
+
+        single.forEach { was ->
+            assertEquals(
+                "an accepted reboot leaves a gate on, so the phone comes back rooted",
+                RootGates.none,
+                gatesAfterRebootRequest(was, accepted = true),
+            )
+            assertEquals(
+                "a refused reboot does not put back what this action took away",
+                was,
+                gatesAfterRebootRequest(was, accepted = false),
+            )
+        }
+    }
+
+    @Test
+    fun `a phone carrying two gates keeps both through a refused reboot`() {
+        // The state the setters no longer create and an older build could leave behind. The restore must not
+        // enforce the exclusivity rule the setters apply: doing that here would drop a setting under a button
+        // that promised to change nothing at all when the reboot fails.
+        val both = RootGates(payload = true, helper = true, universal = true)
+        val oneOfTwo = RootGates(payload = true, helper = true, universal = false)
+
+        assertEquals(oneOfTwo, gatesAfterRebootRequest(oneOfTwo, accepted = false))
+        assertEquals(both, gatesAfterRebootRequest(both, accepted = false))
+    }
+
+    @Test
+    fun `the three switches follow the stored gates after the action`() {
+        // Each gate is a preference with a switch drawn over it, and the action moves all three - so the screen
+        // has to re-read all three, or two switches stay drawn as on over a phone that has just turned them
+        // off. One request from the section, one reader in the shell.
+        val recovery = source("RootRecoveryUi.kt")
+        assertTrue(
+            "the recovery section no longer asks for the gates to be re-read after a reboot request",
+            recovery.contains("onRootGatesChanged()"),
+        )
+
+        val main = source("MainActivity.kt")
+        val reader = main.substringAfter("private fun refreshRootGates()").substringBefore("private fun ")
+        assertTrue(
+            "the shell's reader no longer reads all three gates",
+            reader.contains("AppPreferences.bootRootMode(this)") &&
+                reader.contains("AppPreferences.rerootAtBoot(this)") &&
+                reader.contains("AppPreferences.universalBootRoot(this)"),
+        )
+        assertTrue(
+            "the recovery section is not given the shell's reader, so the switches keep their own idea",
+            main.contains("onRootGatesChanged = onRootGatesChanged"),
+        )
+    }
+
+    /** A file of the app's own source, from this project's or the module's working directory. */
+    private fun source(fileName: String): String =
+        listOf(
+            File("src/main/java/dev/busung/s25uroot/$fileName"),
+            File("app/src/main/java/dev/busung/s25uroot/$fileName"),
+        ).firstOrNull(File::isFile)?.readText()
+            ?: error("$fileName was not found from ${File(".").absolutePath}")
 }
