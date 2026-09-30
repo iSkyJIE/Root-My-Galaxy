@@ -23,6 +23,28 @@ The device feed and native payloads used here are maintained in
 [Root-My-Galaxy-Payloads](https://github.com/rushiranpise/Root-My-Galaxy-Payloads), a fork of
 [the original catalog](https://github.com/BuSung-dev/Root-My-Galaxy-Payloads).
 
+## Contents
+
+Every section below is collapsed. Open the one you are reading for, or follow a link here.
+
+**The app**: [Application](#application) · [The app's screens](#the-apps-screens) · [Settings](#settings)
+
+**Payloads**: [Payload sources](#payload-sources) · [Local payload](#local-payload) · [Payload modes](#payload-modes)
+
+**A run, start to finish**: [Boot settle](#boot-settle) · [Run plan](#run-plan) · [The screen during a run](#the-screen-during-a-run) · [What a run does once KernelSU is verified](#what-a-run-does-once-kernelsu-is-verified) · [One run at a time](#one-run-at-a-time) · [After a run ends](#after-a-run-ends) · [When a run fails](#when-a-run-fails)
+
+**KernelSU**: [Three KernelSUs, one at a time](#three-kernelsus-one-at-a-time) · [Loading KernelSU, or not](#loading-kernelsu-or-not) · [Protecting the image partitions](#protecting-the-image-partitions) · [KernelSU readiness](#kernelsu-readiness)
+
+**The second root path**: [The Dirty Frag chain](#the-dirty-frag-chain)
+
+**Root after a reboot**: [Root on boot](#root-on-boot)
+
+**Shizuku and the shells it needs**: [Shizuku without a computer](#shizuku-without-a-computer) · [Which transport a run uses](#which-transport-a-run-uses) · [Wireless ADB](#wireless-adb)
+
+**Repair and restarting**: [Post-root repair](#post-root-repair) · [What the app leaves on the device](#what-the-app-leaves-on-the-device) · [Restarting the phone](#restarting-the-phone)
+
+**The repository**: [Build](#build) · [Build identity](#build-identity) · [Signing](#signing) · [Releases](#releases) · [Keeping up with the upstream fork](#keeping-up-with-the-upstream-fork)
+
 ## Application
 
 <img width="200" alt="Home: live KernelSU and Shizuku status" src="docs/screenshots/home.png" /> <img width="200" alt="Choosing a payload: the flavour chips, and the candidates that stage each one" src="docs/screenshots/payload-picker.png" />
@@ -166,6 +188,10 @@ beside the version they are about.
 
 ## Payload sources
 
+<details>
+<summary>Which catalogs the app reads, how a source is added, checked and pinned, and why a pinned source keeps working when the API is rate limited.</summary>
+
+
 **Settings → Payload Management → Payload Sources** opens a bottom sheet that
 lists the GitHub `owner/repository` and branch of every catalog the app may use, with a checkbox
 per entry to enable or disable it and a delete action to drop it. The sheet is the right shape
@@ -278,7 +304,13 @@ four 5.15 profiles ask for a fresh session, and marked profiles also run on 5.10
 6.1.157 so a version-keyed policy would impose an hour-long single-attempt budget on targets
 that never asked for it.
 
+</details>
+
 ## Local payload
+
+<details>
+<summary>Importing an exploit built on this device, and what changes for a run while it is in place.</summary>
+
 
 **Settings → Payload Management → Local payload** imports an exploit `.so` built on this device,
 for testing against a target the feed does not cover yet. The file is copied into app storage when
@@ -309,7 +341,13 @@ state a hash instead of switching verification off. An enforced size must also b
 which makes a zero a feed error that fails at parse time rather than a download that can never
 succeed.
 
+</details>
+
 ## Payload modes
+
+<details>
+<summary>Online reads the sources; Offline runs the last payload that completed a verified install, with no network at all.</summary>
+
 
 **Settings → Payload Management → Payload Mode** decides where a run takes its payload from.
 
@@ -334,7 +372,13 @@ logged with its reason. Nothing clears the cache automatically either a cached p
 could have failed for any reason, and losing the fallback over one bad run would be the wrong trade —
 so **Remove** in the cached-payload dialog is how it goes away.
 
+</details>
+
 ## Boot settle
+
+<details>
+<summary>Why a run waits after a boot, the floor both wait settings offer, and how the countdown is measured.</summary>
+
 
 A run does not start the exploit on a device that has only just booted. **Settings → Run Management →
 Boot wait time** sets the floor, and the wait is measured from the boot rather than from the moment the
@@ -361,7 +405,13 @@ already passed and part of the boot is spent, while the manual floor is a settin
 run adjusts for that run. Sharing one value would mean tuning automation silently rewrote what a
 manual run does.
 
+</details>
+
 ## Run plan
+
+<details>
+<summary>What the next run will be handed, and which side chose each number.</summary>
+
 
 **Settings → Run Management → Run plan** shows what the next run will be handed before it starts:
 the target the catalog resolves for this device and which source it came from, whether that
@@ -416,7 +466,13 @@ since how to look for the slide is a different question from how many tries it g
 the side that chose each of the three, so a run testing an experimental number says so on the screen that
 describes it.
 
+</details>
+
 ## The screen during a run
+
+<details>
+<summary>One writer owns the install screen, and how a lookup that landed late used to overwrite a live run.</summary>
+
 
 Two writers publish the whole install state: the lookup that decides what this device supports, and
 the run. They cannot both be right, and the lookup is the one that cannot be stopped in the middle of
@@ -434,7 +490,13 @@ publish, and a run takes one on the caller's thread so by the time a lookup's fe
 that has since started has already made its claim stale. The write becomes a no-op instead of a second
 opinion.
 
+</details>
+
 ## One run at a time
+
+<details>
+<summary>The record that refuses a second attempt across the app's processes, and what it carries.</summary>
+
 
 A run is one attempt at the exploit, and the app is not one thing: the boot gate installs from
 `:autoroot_gate`, a run started from a screen is in the UI process, and that process can hold two screens
@@ -457,7 +519,13 @@ if it has, or restarting, which takes the device over from it. The boot gate ask
 once in its decision, which stands the automatic attempt down without spending it, and once after its settle
 wait, since the walk to the phone takes minutes and a run can be started during it.
 
+</details>
+
 ## What a run does once KernelSU is verified
+
+<details>
+<summary>The two readings of "is root live", and the secure-settings grant a verified install makes for itself.</summary>
+
 
 Two readings of "is root live" are kept apart, because either alone is wrong on this hardware. The
 native one is fast `/sys/module/kernelsu` and `/proc/modules` and can be hidden by Samsung's
@@ -478,7 +546,13 @@ wireless debugging on by hand. A grant that does not happen is a line in the log
 root that was obtained is the result, and the cable (or the next boot, which has root of its own) is
 still there.
 
+</details>
+
 ## Three KernelSUs, one at a time
+
+<details>
+<summary>Why the flavour follows the payload rather than a switch, and how the manager version follows it too.</summary>
+
 
 The app drives one KernelSU at a time: KernelSU (`me.weishu.kernelsu`, releases from `tiann/KernelSU`),
 KernelSU-Next (`com.rifsxd.ksunext`, releases from `KernelSU-Next/KernelSU-Next`) or ReSukiSU
@@ -535,7 +609,13 @@ knows, so it is the only
 offer that downloads without first asking GitHub for the release. The manager version dialog lists what
 the project publishes and marks the one the app offers.
 
+</details>
+
 ## Loading KernelSU, or not
+
+<details>
+<summary>What a run does when the load is on, what "root only" means when it is off, and everything switched off with it.</summary>
+
 
 **Settings → Root Management → Install KernelSU**, on by default. It is the run's last decision
 and the only one that changes what a run *is*: with it on, the exploit's bootstrap root is spent on
@@ -568,7 +648,13 @@ Everything that consumes the load is switched off with it rather than left to fa
 The single per-run choice is frozen when a run starts, like the transport, so a preference changed
 from Settings mid-run cannot stage a daemon on one reading and skip the load on another.
 
+</details>
+
 ## Protecting the image partitions
+
+<details>
+<summary>Marking boot and its neighbours read-only through the window between bootstrap root and a verified kernel.</summary>
+
 
 **Settings → Run Management → Protect image partitions**, off by default, marks `boot`, `init_boot`,
 `vendor_boot`, `dtbo`, `super`, `optics`, `prism` and `vbmeta` with their `_a` and `_b` slots —
@@ -590,7 +676,13 @@ unaffected because that runs in the bootloader rather than in this kernel. The r
 devices were set, or that the script was missing from the build, rather than reporting protection it
 did not get.
 
+</details>
+
 ## When a run fails
+
+<details>
+<summary>The stage and reason a failure names, how a killed payload and a spent pipe budget are reported, and what the card marks.</summary>
+
 
 A failed run names the stage it stopped in starting the transport, resolving the payload for
 this device, downloading the payloads, running the kernel exploit, loading KernelSU, or verifying
@@ -648,7 +740,13 @@ refuses before it waits or downloads anything before the boot-settle floor, deli
 settling for minutes only to be refused is the wait the refusal exists to save and offers a restart as
 the answer instead of another attempt.
 
+</details>
+
 ## After a run ends
+
+<details>
+<summary>The step a successful load leaves for you, and the three answers a failed run offers.</summary>
+
 
 **A successful load ends with a step to take rather than only a result to read.** KernelSU's modules are
 mounted by the load, but they do not enter the apps that should see them until the userspace is built
@@ -687,7 +785,13 @@ Two things take the wait away instead of offering it uselessly: a boot whose pip
 where only a restart refills it, and a payload that may still be running, where starting a second one can
 lock the phone up.
 
+</details>
+
 ## What the app leaves on the device
+
+<details>
+<summary>What is staged where, why nothing sweeps itself, and the Trash screen that lists and deletes it.</summary>
+
 
 The daemon, the helper and the exploit have to be executable by a shell, and `/data/local/tmp` is the one
 directory that is both writable by the transports this app uses and outside the app's own sandbox so
@@ -745,7 +849,13 @@ first, by whichever route the folder allows: the temp directory is emptied by gl
 naming the paths the catalog lists. **Delete all** at the bottom of the screen is the wider action, which
 is why it is asked for and confirmed.
 
+</details>
+
 ## KernelSU readiness
+
+<details>
+<summary>The three-valued KernelSU row, the readings behind it, and the module check that gates Reboot Android.</summary>
+
 
 **Home → Status** puts the facts a run depends on on the screen the app opens on *is KernelSU loaded
 in this boot*, *can this app use Shizuku*, and *which manager apps are installed* read live rather
@@ -806,7 +916,13 @@ the decision holds where it is actually taken. Privileged maintenance that runs 
 the helper's temporary handoff socket: a Samsung kernel may refuse new connects to that socket while
 KernelSU itself is perfectly healthy.
 
+</details>
+
 ## Shizuku without a computer
+
+<details>
+<summary>The four routes to starting Shizuku, what each needs, and why the app reports the state rather than remembering it.</summary>
+
 
 Shizuku is what this app runs the payload as shell through, and it is normally started by hand over
 adb so after a reboot the transport is gone until someone finds a cable. Once KernelSU is on the
@@ -886,7 +1002,13 @@ request to another app can only be answered by waiting for a binder. If your Shi
 itself on boot, the app notices and reports that rather than racing it. Switching the setting on
 starts Shizuku there and then, so the setting is proven on the device instead of at the next reboot.
 
+</details>
+
 ## Which transport a run uses
+
+<details>
+<summary>The three transports a payload can go through, and the two rules that decide between them.</summary>
+
 
 A payload run's payload goes through one of three transports, and the choice is frozen when the run
 starts so a preference changed mid-run cannot mix them between the exploit and the KernelSU staging:
@@ -919,7 +1041,13 @@ transport is visible before a run is started rather than after it fails.
 transport: it needs no shell, no helper and nothing installed, and it drives the kernel from this app's
 own process see [The Dirty Frag chain](#the-dirty-frag-chain).
 
+</details>
+
 ## Wireless ADB
+
+<details>
+<summary>Pairing with the device's own adbd, the loopback connection, and the setting it turns on and off around itself.</summary>
+
 
 Every other transport this app has can be absent at the worst moment. A Shizuku binder needs root or a
 computer; the bootstrap helper's socket only exists in the window it was staged in. The device's own
@@ -1000,7 +1128,13 @@ only exists while it is on: the same window a run uses, failsafe alarm armed fir
 by the pairing service when the transaction ends. Where neither the permission nor root exists, the
 app hands over the switch by hand - which is what opening Developer options is for.
 
+</details>
+
 ## The Dirty Frag chain
+
+<details>
+<summary>The second root path: what it needs, its daemon and two tiers, the run's four steps, and what it leaves behind.</summary>
+
 
 A second way to root a phone, and the one that needs nothing at all on it first: no system-uid helper,
 no Shizuku, no temporary root, no `packages.xml` edit and no reboot to re-read one. It is the Dirty Frag
@@ -1044,7 +1178,13 @@ notification, and over its rows in the payload sheet; the payload flow is named 
 the same places. One name per flow, read from the flow itself, so a record and the screen it is opened
 from cannot describe the same run differently.
 
+</details>
+
 ## Root on boot
+
+<details>
+<summary>The three gates, what each runs, what each needs, and why nothing here roots a phone before it is unlocked.</summary>
+
 
 These targets are rooted by loading KernelSU into the running kernel, so root does not survive a power
 cycle by itself: every boot has to load it again. The Dirty Frag chain is no exception: its module lives
@@ -1109,7 +1249,13 @@ One deliberate difference from the reference: after a successful boot install it
 closes whatever is open, which is a decision for the person using the phone: *Reboot Android* in
 Recovery Management is the same action with a finger on it.
 
+</details>
+
 ## Post-root repair
+
+<details>
+<summary>The four recovery actions, what each waits for and refuses, and the module checks behind them.</summary>
+
 
 A rooted boot can come up unusable a module that breaks the framework, a mount that needs the
 runtime recreated, a state worth getting out of and until now the only answers were a reboot or a
@@ -1202,7 +1348,13 @@ restart or a reboot after the user has been told the action failed is the worst 
 The reverse cannot happen either a daemon that has not returned is stopped and reported rather than
 left to fire a userspace transition the app already gave up on.
 
+</details>
+
 ## Restarting the phone
+
+<details>
+<summary>The ways out of the app: the soft restart, the full reboot, and the shortcuts to them.</summary>
+
 
 The power button in Home's header opens **Restart the phone**: the same six ways out the KernelSU
 manager's own power menu offers, in its order Reboot, Soft restart, Recovery, Bootloader, Download and
@@ -1230,7 +1382,13 @@ for it, rather than failing quietly. There is deliberately no reboot shortcut: A
 already restarts the phone, so what these add is everything the sheet offers that the system's menu does
 not.
 
+</details>
+
 ## Keeping up with the upstream fork
+
+<details>
+<summary>What this fork took from the original, and how it keeps following it.</summary>
+
 
 This app is a fork of a fork: `Root-My-Galaxy` upstream, and `Root-My-Galaxy-Extended` on top of it, whose
 changes have been the source of most of the runtime hardening here. When it moves, the question is
@@ -1261,7 +1419,13 @@ instead, with no release needed.
 **Not ported: their release plumbing.** The production-bundle build step, the preflight that validates
 one, `FUNDING.yml` and their release notes are about shipping *their* artifact.
 
+</details>
+
 ## Build identity
+
+<details>
+<summary>How two builds of one version are told apart, and where to read the version name and code.</summary>
+
 
 Two builds of the same version are otherwise indistinguishable once installed, so every build
 carries a version name that says which one it is:
@@ -1293,7 +1457,13 @@ distinguish two builds of one commit; the code is what does, which is why both a
 update check compares only the dotted numbers, so a build's own suffix is never offered back to it
 as an update.
 
+</details>
+
 ## Signing
+
+<details>
+<summary>The repository release key, and why every build shares one.</summary>
+
 
 `assembleRelease` needs the repository release key and fails instead of producing an
 unsigned APK. Locally, create the gitignored `keystore/keystore.properties`:
@@ -1325,7 +1495,13 @@ Galaxy rather than over it. The original keeps working if you leave it installed
 can upgrade the other, and a phone that has already allowed the original's superuser request has
 allowed nothing for this one.
 
+</details>
+
 ## Releases
+
+<details>
+<summary>Which branch publishes what, the pre-release and stable workflows, and the two back-merge directions.</summary>
+
 
 Which branch you push to decides which of the two workflows runs:
 
@@ -1390,3 +1566,5 @@ A merge from a back-merge pull request does not need that: merging is an ordinar
 `CI Build` starts on its own and the release pull request step runs with it.
 
 Use only on devices you own or are explicitly authorized to test.
+
+</details>
