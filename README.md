@@ -6,9 +6,10 @@
 Root My Galaxy Next is a one-click installer for explicitly supported Samsung model and
 kernel combinations, and an independent fork of
 [Root My Galaxy](https://github.com/BuSung-dev/Root-My-Galaxy) by BuSung-dev. It keeps that
-app's device feed, payload contract and KernelSU-first approach, and adds to it: KernelSU-Next
-and KernelSU-Next+SUSFS payload flavours beside KernelSU, a choice of manager versions, root on
-boot through a verified handoff, wireless ADB pairing as a shell transport, Shizuku started at
+app's device feed, payload contract and KernelSU-first approach, and adds to it: KernelSU-Next,
+ReSukiSU and KernelSU-Next+SUSFS payload flavours beside KernelSU, a choice of manager versions, three
+ways to root an unattended boot (the payload flow, the system-uid helper, and a chain that needs
+neither), wireless ADB pairing as a shell transport, Shizuku started at
 boot, a logs tab, filterable run history, and the repair actions once the kernel is loaded.
 
 It installs as its own app (`dev.rushiranpise.rmgnext`), so it can sit beside the original:
@@ -49,6 +50,14 @@ The sheet also carries a search box, by device, model or kernel, and a **Show on
 that is remembered with a dozen sources configured it can hold every device its catalogs know, and
 the row being looked for is found by name long before it is found by scrolling.
 
+Below those rows the same sheet lists **Dirty Frag**, the chain that needs nothing installed first:
+one row per KernelSU per payload tier, six of them, each named by the exploit and its CVE rather than
+by a description of a phone. The device rows are what the sources publish, so the toggle and the
+flavour chips narrow them; these rows belong to no device, are listed whatever **Show only my device**
+says, and are what a phone no feed has an entry for still roots with. The device tier's row names the
+entry it would stage, or says the enabled sources carry none, and picking any of them starts that
+chain instead of a payload run. See [The Dirty Frag chain](#the-dirty-frag-chain).
+
 ## Build
 
 Requirements:
@@ -88,7 +97,7 @@ app/build/outputs/apk/release/app-release.apk
 dfr/build/outputs/apk/debug/dfr-debug.apk      # the helper the system-uid flow installs
 ```
 
-The `:dfr` module builds the helper APK that **Settings → System Management → System UID install**
+The `:dfr` module builds the helper APK that **Settings → Root Management → System UID install**
 injects a certificate for and then installs as a system app. `:app` stages that artifact into its own
 assets when it is built, so the helper is always the one from the same commit; a helper built on its own
 reaches a phone only by building the app. Both modules read the launcher icon from `launcher-icon/` at
@@ -109,8 +118,17 @@ device itself, and then two rows that do something rather than report something:
 About. Its header carries the build label and, in the KernelSU manager's own position, the power button
 that opens [the ways out](#restarting-the-phone).
 
+The install card changes what a tap on it means with the state of this boot. On a phone with nothing
+installed it opens the payload sheet, which is where a run is chosen; once this boot is rooted it opens
+that flavour's manager instead, because opening it is what a rooted phone needs first, and the picker is
+therefore not reachable in that state (the card is the only way into it). A run in flight makes the card
+inert, since starting one over another is what [the one-run-at-a-time rule](#one-run-at-a-time) refuses.
+
 **History** is every run with its log, its stage and the payload source that served it, exportable as a
-zip. A filter row above the list narrows it by result success, root only, failed and the chips are
+zip. Each row names the exploit the run used, **CVE-2026-43499** for a payload run and **Dirty Frag
+(CVE-2026-43284)** for a chain run, from the flow the run wrote into its own record; an entry written
+before the record carried a flow shows no name rather than a guessed one, because the one such run on a
+phone may have been either. A filter row above the list narrows it by result success, root only, failed and the chips are
 built from the history itself, so a result nothing has ever produced is not offered. Deleting asks
 nothing and offers an **Undo** instead, because the log is on this phone and the entries are captured
 before they go.
@@ -133,16 +151,18 @@ starts open, so the page a fresh install shows is the whole page.
 |---|---|
 | Appearance | theme mode, material colour, language |
 | Payload Management | payload mode, payload sources, cached payload, local payload |
-| Run Management | disable KSU modules, protect image partitions, boot settle, run limits, run plan |
-| Shizuku Management | use Shizuku, start Shizuku now, Shizuku start token, auto start Shizuku on boot |
+| Run Management | disable KSU modules, protect image partitions, boot wait time, run limits, run plan |
+| Shizuku Management | use Shizuku, start Shizuku now, Shizuku start code, auto start Shizuku on boot |
 | Wireless ADB Management | pair, test, or remove this app's wireless-debugging identity |
-| Root Management | KernelSU flavour (a readout of the payload), install KernelSU, manager, manager version, the manager and KernelSU versions this phone is running, auto soft reboot, root on boot |
-| Recovery Management | reload modules, restart Zygote, KernelSU soft reboot, reboot and unroot (which also empties /data/adb and /data/local/tmp) each confirms first |
-| System Management | the battery-optimisation exemption a run with the screen off depends on, and what the app has left in `/data/local/tmp` |
+| Root Management | KernelSU build (a readout of the payload) and the KernelSU service file, install KernelSU, manager, manager version, the manager and KernelSU versions this phone is running, auto soft restart, the three root gates (Auto Root via Payload, Auto Root via Helper, Auto Root via DirtyFrag), the System UID install card and Keep Odin reachable |
+| Recovery Management | Reload modules, Reboot Android, Soft restart, Reboot and unroot (which also empties /data/adb and /data/local/tmp), each confirms first |
+| System Management | the battery-optimisation exemption a run with the screen off depends on, and the Trash card, which lists what the app has left on the device |
 
-The two boot-time settings are filed under their own subsystem rather than together: *auto start Shizuku
-on boot* is a property of Shizuku, and *root on boot* is a property of root. **About** and the update
-check are not here at all: they are on Home, beside the version they are about.
+The boot-time settings are filed under their own subsystem rather than together: *auto start Shizuku
+on boot* is a property of Shizuku, and the three root gates are a property of root. The three are
+alternatives rather than companions, so each one's switch turns the other two off (see
+[Root on boot](#root-on-boot)). **About** and the update check are not here at all: they are on Home,
+beside the version they are about.
 
 ## Payload sources
 
@@ -312,29 +332,30 @@ rather than run, which is why the cached entry is refused and refreshed rather t
 Publishing is best-effort and never turns a successful root into a failure; a refusal to publish is
 logged with its reason. Nothing clears the cache automatically either a cached payload that failed
 could have failed for any reason, and losing the fallback over one bad run would be the wrong trade —
-so **Forget it** in the cached-payload dialog is how it goes away.
+so **Remove** in the cached-payload dialog is how it goes away.
 
 ## Boot settle
 
 A run does not start the exploit on a device that has only just booted. **Settings → Run Management →
-Boot settle** sets the floor, and the wait is measured from the boot rather than from the moment the
+Boot wait time** sets the floor, and the wait is measured from the boot rather than from the moment the
 run was asked for: a device already past the floor waits not at all, and one rebooted ten seconds ago
 waits the rest. That distinction is the whole point what the gate protects is the state of a freshly
 booted device, where the exploit's racy stage fails for reasons the payload cannot fix.
 
-The floor defaults to two minutes and is chosen from `Off, 30 s, 1, 1.5, 2, 3, 5, 10 minutes`; a
+The floor is **off** by default, because a phone that has just booted is not held back by a constant this
+app chose, and it is chosen from `Off, 30 s, 1, 1.5, 2, 3, 5, 10 minutes`; a
 value nobody tested is not a better one, which is why the list is fixed rather than free-form. While
 the run is waiting it says so on the status card with a countdown that is read from the clock every
 tick, so the app sleeping through part of the wait cannot make the run believe it waited longer than
 it did. The run plan shows the floor too, beside the other app-side ceilings.
 
-It is a floor, not a rule: the waiting screen offers **Run now anyway**, and the run continues from
+It is a floor, not a rule: the waiting screen offers **Run now**, and the run continues from
 there with nothing else changed. Someone who knows this boot has already settled is better informed
 than a constant, and the alternative refusing to run would just move the same decision to a
 reboot.
 
-The automatic install has **its own floor**, under **Settings → Root Management → Root on boot Delay**,
-defaulting to one minute rather than two. The two are separate settings because they are waiting out
+The automatic install has **its own floor**, under **Settings → Root Management → Auto Root wait time**,
+and it is off by default as well. The two are separate settings because they are waiting out
 different amounts and belong to different decisions: by the time the gate runs, `BOOT_COMPLETED` has
 already passed and part of the boot is spent, while the manual floor is a setting a person watching a
 run adjusts for that run. Sharing one value would mean tuning automation silently rewrote what a
@@ -365,7 +386,7 @@ opt-in override below is the exception. The *app-side cut-offs* are the app's ow
 | ceiling | what it decides |
 |---|---|
 | **Whole run** | how long one run may take before the app gives up on it |
-| **Silence before the payload is stalled** | how long the payload may print nothing before it is treated as stalled |
+| **No output before the run counts as stuck** | how long the payload may print nothing before it is treated as stalled |
 | **One helper command** | how long a single helper command may run |
 
 They are the ones worth a setting because they are the numbers a device and a boot change a cold
@@ -382,8 +403,8 @@ attempt that scans pages and a ceiling *below* that would cut such a run off bet
 rather than at one. The setting can raise that ceiling; it cannot lower it. The stall limit is simply not
 applied to one, which the plan says in words rather than showing a value that will not be used.
 
-**The payload's numbers can be overridden, and it is off by default.** The same dialog carries a switch —
-*Override the payload* which puts the app's attempts, per-attempt timeout and slide route in place of
+**The payload's numbers can be overridden, and it is off by default.** The same dialog carries a switch,
+*Use my own settings*, which puts the app's attempts, per-attempt timeout and slide route in place of
 the profile's. It exists for testing a device the feed has not been written for yet, and it is off by
 default because it can make a working target fail: those numbers are the payload's account of how it
 behaves, not preferences. It covers exactly those three. `p0AttemptTimeoutSec`, `p0OffsetCache` and
@@ -426,7 +447,7 @@ refused when that record names a run that is not this screen's own. The record c
 boot id, the pid, and the **start time** from `/proc/<pid>/stat`. The start time is not decoration - a pid is
 handed out again once its process is gone, and this record outlives its process by design, so on a long boot
 the number alone would name a stranger and refuse a legitimate run. It also carries the history entry its
-owner is writing, which is what lets a reader - the notification, the residue screen's delete, this guard -
+owner is writing, which is what lets a reader - the notification, the Trash screen's delete, this guard -
 tell *which* run is in flight rather than only that somebody is.
 
 The refusal is reported as a failure with no history entry behind it: nothing was attempted, so there is
@@ -457,10 +478,11 @@ wireless debugging on by hand. A grant that does not happen is a line in the log
 root that was obtained is the result, and the cable (or the next boot, which has root of its own) is
 still there.
 
-## Two KernelSUs, one at a time
+## Three KernelSUs, one at a time
 
 The app drives one KernelSU at a time: KernelSU (`me.weishu.kernelsu`, releases from `tiann/KernelSU`),
-KernelSU-Next (`com.rifsxd.ksunext`, releases from `KernelSU-Next/KernelSU-Next`) or ReSukiSU. They are
+KernelSU-Next (`com.rifsxd.ksunext`, releases from `KernelSU-Next/KernelSU-Next`) or ReSukiSU
+(`com.resukisu.resukisu`, releases from `ReSukiSU/ReSukiSU`). They are
 separate projects with separate kernels, separate managers and separate daemons, and they **cannot both
 be in the kernel at once** each hooks the same syscall paths so a boot carries one of them or neither.
 
@@ -473,13 +495,15 @@ payload resolved for this device made the app offer and look for official Kernel
 kernel whose only manager is KernelSU-Next's with nothing on the screen saying so. Deriving it removes
 that state rather than warning about it.
 
-Where it is chosen, then, is the payload sheet: its **flavour chips** (Any, KernelSU, KernelSU-Next,
+Where it is chosen, then, is the payload sheet: its **flavour chips** (All, KernelSU, KernelSU-Next,
 ReSukiSU) narrow the candidate list to the payloads that stage one KernelSU, and the line under them says
-what the selected name is. Any is the default and the filter is not stored, because it is a way to find
+what the selected name is. All is the default and the filter is not stored, because it is a way to find
 a payload of a kind rather than a setting a sheet that reopened filtered would hide the entry somebody
 came back for. Picking a payload of another flavour is the override, and it is the only one: there is no
-second switch to forget. **Settings → Root Management → KernelSU flavour** is a readout of that decision
-("Set by the payload you pick for this device") rather than a picker, and tapping it opens the sheet.
+second switch to forget. **Settings → Root Management → KernelSU build** is a readout of that decision
+("Comes from the payload for this phone.") rather than a picker, and it takes no tap: the only thing a tap
+could do is open the sheet where a payload is picked, and that is a choice about the *next* run, made where
+that run is started.
 
 A flavour that differs from what this boot loaded takes effect after a restart, and the row says so with
 the reason which flavour this boot is actually holding rather than only that a restart is owed,
@@ -505,8 +529,9 @@ at the three moments it decides what this device will run a run resolving its pa
 by hand in the target sheet, and the offline cache being loaded which are also the moments the flavour
 is set, so the settings rows can offer it without re-reading the sources. A version typed into the manager field still wins over everything; an
 entry that declares none, which is every entry written before the field existed, falls back to the
-flavour's own release (3.4.0 for KernelSU-Next, 3.3.0 for KernelSU the newest each project has
-published), and that release is also the only one whose APK file name the app knows, so it is the only
+flavour's own release (3.4.0 for KernelSU-Next, 3.3.0 for KernelSU and 4.2.0-rc2 for ReSukiSU, the
+newest each project has published), and that release is also the only one whose APK file name the app
+knows, so it is the only
 offer that downloads without first asking GitHub for the release. The manager version dialog lists what
 the project publishes and marks the one the app offers.
 
@@ -528,12 +553,15 @@ loaded.
 
 Everything that consumes the load is switched off with it rather than left to fail:
 
-- **Root on boot** cannot run, because there is nothing for a boot run to put back; the switch is
-disabled with that reason on it, and the gate itself refuses with a reason of its own
+- **Auto root via payload** cannot run, because there is nothing for a boot run to put back; the
+  switch is disabled with that reason on it, and the gate itself refuses with a reason of its own
   (`SkipKernelSuLoadingOff`) rather than looking like the setting had been turned off. The stored
-  value is kept, so turning loading back on restores exactly what was there.
-- **The recovery actions** reload modules, restart Zygote, KernelSU soft reboot, reboot and unroot —
-  consume the daemon a verified load installed, so the cards read *Needs KernelSU* and take no tap.
+  value is kept, so turning loading back on restores exactly what was there. The other two gates are
+  not affected, and should not be: *auto root via helper* reroots through the helper rather than
+  through this flow, and *auto root via Dirty Frag* loads KernelSU as its first act rather than as a
+  decision, so neither has anything to leave unloaded.
+- **The recovery actions** Reload modules, Reboot Android, Soft restart and Reboot and unroot consume
+  the daemon a verified load installed, so the cards read *Needs KernelSU* and take no tap.
 - **Disable KSU modules** is inert when there is no load for modules to sit out, so it is disabled
   with that said on it.
 
@@ -575,7 +603,13 @@ the app's own decision is otherwise unexplained.
 A payload that was killed rather than exiting is reported as the signal that killed it `137` is
 read back as `signal 9 (SIGKILL)`, because that is the one thing a status can say about a payload
 that died without choosing to and the reason is reduced to a single short line before it reaches
-the card. The payload's own words belong in the log and, clipped to the last few lines, on the
+the card. An exit that is not a signal is explained too: `126` is a command that was found and could not be
+executed, `127` one that was not found, and `255`, which is what a refused or unavailable privilege and a
+missing exec target both arrive as, is reported as "the command could not be run" rather than left as a bare
+number. That last one is deliberately not dressed up as a signal: 255 minus 128 is not one, so the branch
+that explains a killed payload says nothing about it.
+
+The payload's own words belong in the log and, clipped to the last few lines, on the
 failure card; a message that carried them instead once turned the card into a page of text with the
 stage nowhere in sight.
 
@@ -618,11 +652,15 @@ the answer instead of another attempt.
 
 **A successful load ends with a step to take rather than only a result to read.** KernelSU's modules are
 mounted by the load, but they do not enter the apps that should see them until the userspace is built
-again so the run screen offers **Restart userspace to load modules**, which is KernelSU's own soft
+again so the run screen offers **Soft Reboot**, which is KernelSU's own soft
 reboot asked for from the screen that has just finished, at the moment that decision is being made.
-**Settings → Root Management → Auto Soft reboot** takes it for you: with it on, a run that loaded
+**Settings → Root Management → Auto soft restart** takes it for you: with it on, a run that loaded
 KernelSU asks for the soft reboot itself, after the result has been written, because the restart ends
-everything the process is in the middle of. A refusal there is a line in the log rather than a failure,
+everything the process is in the middle of. All three flows honour it, performed by whoever holds the
+grant: the payload run asks for it at the end of the run, the chain does it inside its own run, and the
+helper's boot reroot does it once KernelSU has loaded. The payload run's restart is gated on *Install
+KernelSU* (the row is disabled with that off, since a run that loaded nothing has nothing to apply);
+the chain's is not, because loading KernelSU is not a step of that flow, it is the whole of what it does. A refusal there is a line in the log rather than a failure,
 since the run has already succeeded. It is on by default, because a load whose modules nothing has picked
 up yet is not a finished job; the restart closes whatever is open, so it can be turned off.
 
@@ -673,7 +711,8 @@ Deletion still needs a shell KernelSU's `su`, or the `shell`-uid server Shizuku 
 *owns* the temp directory and is the only reason deletion there is possible at all, since the app's own
 uid may not write in it. A device with no shell deletes nothing and says so; the files stay listed.
 
-**The reading.** **Settings → System Management** carries a *Residue* card opening a screen with three
+**The reading.** **Settings → System Management** carries a *Trash* card (*"Files left on the device"*)
+opening a screen with three
 folders, because one directory was never the whole picture:
 
 - **`/data/local/tmp`** the shared temp directory, mode `0771`, reached by any app on the phone by
@@ -703,7 +742,7 @@ empty reading earned and opens on a tap. Closed is the default because a list dr
 directory a detector found something in below the two that are clean. Inside, a row's own delete removes
 that one file; the delete in a folder's heading removes everything in **that folder only**, confirmed
 first, by whichever route the folder allows: the temp directory is emptied by glob, `/data/system` by
-naming the paths the catalog lists. **Delete All** at the bottom of the screen is the wider action, which
+naming the paths the catalog lists. **Delete all** at the bottom of the screen is the wider action, which
 is why it is asked for and confirmed.
 
 ## KernelSU readiness
@@ -711,7 +750,7 @@ is why it is asked for and confirmed.
 **Home → Status** puts the facts a run depends on on the screen the app opens on *is KernelSU loaded
 in this boot*, *can this app use Shizuku*, and *which manager apps are installed* read live rather
 than from a snapshot. KernelSU is loaded per boot, so the row is about the current boot and not the
-device's history: a phone rooted yesterday reads as not loaded, which is exactly why root on boot
+device's history: a phone rooted yesterday reads as not loaded, which is exactly why a boot gate
 exists. The manager rows are the other half of that question, because a run can install a daemon
 without the manager app being present and the manager is what the app then opens to grant itself
 superuser; they are named per flavour because the two projects ship different packages and each flavour
@@ -757,7 +796,7 @@ be mounted is counted from the module directories themselves (enabled, not marke
 `system` overlay), so installing or disabling one changes the expectation without this app knowing
 which modules exist.
 
-That reading gates **Restart Zygote**, whose whole purpose is to make already-mounted modules take
+That reading gates **Reboot Android**, whose whole purpose is to make already-mounted modules take
 effect: with modules enabled but unmounted it is refused in words, rather than taken the framework
 down and back without them. Only a positive finding refuses an unreadable namespace or an
 unreadable report is reported and allowed, because refusing whenever a check cannot be made would
@@ -849,8 +888,8 @@ starts Shizuku there and then, so the setting is proven on the device instead of
 
 ## Which transport a run uses
 
-A run's payload goes through one of three transports, and the choice is frozen when the run starts so
-a preference changed mid-run cannot mix them between the exploit and the KernelSU staging:
+A payload run's payload goes through one of three transports, and the choice is frozen when the run
+starts so a preference changed mid-run cannot mix them between the exploit and the KernelSU staging:
 
 | transport | used when |
 |---|---|
@@ -875,6 +914,10 @@ different places, so they are different messages.
 A profile opts in through its feed entry (`routePolicy.prefersShellTransport`), which is why the run
 plan states it: the line now reads `shell=required` or `shell=optional`, so a refusal for want of a
 transport is visible before a run is started rather than after it fails.
+
+**The Dirty Frag chain is not in that table at all**, because it is a second flow rather than a
+transport: it needs no shell, no helper and nothing installed, and it drives the kernel from this app's
+own process see [The Dirty Frag chain](#the-dirty-frag-chain).
 
 ## Wireless ADB
 
@@ -957,18 +1000,87 @@ only exists while it is on: the same window a run uses, failsafe alarm armed fir
 by the pairing service when the transaction ends. Where neither the permission nor root exists, the
 app hands over the switch by hand - which is what opening Developer options is for.
 
+## The Dirty Frag chain
+
+A second way to root a phone, and the one that needs nothing at all on it first: no system-uid helper,
+no Shizuku, no temporary root, no `packages.xml` edit and no reboot to re-read one. It is the Dirty Frag
+chain, ported from [DFRoot](https://github.com/diabl0w/DFRoot) into this APK, and it reaches the kernel
+from an ordinary app through an unprivileged `IpSecManager` transform: ESP packets the kernel decrypts
+into the page cache of files the chain has opened for `splice()`, which is the xfrm-ESP page-cache write
+filed as **CVE-2026-43284**. The exploit itself is compiled into the app (`app/src/main/cpp/dfroot/`),
+which is what makes a phone with nothing installed on it enough.
+
+**The daemon is the one thing it fetches.** It is not bundled: the chain reads one fixed path, this
+app's own device-protected data directory, so a run downloads the daemon from the payload repository
+and puts it there. Two tiers answer which build of it, and the choice is the user's rather than the
+app's inference:
+
+| tier | what it stages | when it can serve a phone |
+|---|---|---|
+| Device | the feed's entry for this exact phone, whose module was built for the kernel release it runs | only if the enabled sources have an entry for it |
+| Generic | one daemon carrying a module per KMI, which the daemon's own `vermagic` rewrite gets into a kernel it was not built for | only if that daemon carries a module for this kernel's KMI |
+
+Neither tier is used for the other's phone behind anyone's back, and a tier that cannot serve this one
+says so *before* a byte is downloaded. There is no "try one, then the other": a failed load leaves a
+kernel that is already partly patched, and that state is refused rather than retried.
+
+**The run is the same four steps the payload flow shows**, worded for a run that fetches no exploit:
+the device and this boot are checked, the payload is resolved and that flavour's manager is installed,
+the daemon is staged and the chain runs, and then the load is checked against the phone. The manager
+comes *before* the exploit deliberately: once the kernel is answering, there is no app left on the phone
+that can grant anything, so the manager has to be in place to be of any use the moment root exists.
+
+Three things stop a chain run before it starts: the exploit is arm64 only, the boot must not already be
+hooked (the chain arms `/dev/df`, and only a restart clears it), and the daemon must be stageable. When
+the chain does run, its return code is read as its *own* account of itself (the patches landed and the
+daemon started), and the app asks the phone separately: KernelSU live in this boot, or KernelSU's `su`
+present at `/system/bin/su` with bytes in it, or nothing readable. A phone an app cannot read the kernel
+on is exactly the phone where the chain's own word is not the verdict.
+
+What it leaves is the daemon at `/data/adb/ksud` and that `su`; the module it loaded is in RAM, so the
+next boot needs the chain again, which is what its boot gate below is for. A run of this flow is named by
+the exploit and its CVE, **Dirty Frag (CVE-2026-43284)**, in the history row it writes, under its
+notification, and over its rows in the payload sheet; the payload flow is named **CVE-2026-43499** in
+the same places. One name per flow, read from the flow itself, so a record and the screen it is opened
+from cannot describe the same run differently.
+
 ## Root on boot
 
 These targets are rooted by loading KernelSU into the running kernel, so root does not survive a power
-cycle by itself: every boot has to load it again. **Settings → Root Management → Root on boot** makes that
-automatic, and it is a gate rather than a fire-and-forget broadcast.
+cycle by itself: every boot has to load it again. The Dirty Frag chain is no exception: its module lives
+in RAM too. **Settings → Root Management** has three gates for that, and they are alternatives rather
+than companions, because each one decides what a boot with no root does:
 
-The gate runs in its own process (`:autoroot_gate`) because it outlives the app process it starts in —
-which is exactly what happens at boot and it decides whether this boot gets an attempt before doing
-anything else. Its rule is one pure function, in this order: the setting is on; KernelSU is not
-already answering; an install has not already been *verified in this kernel boot*; this boot's single
-attempt has not been spent; and a verified payload is cached. Only the last case asks anything of the
-user, and it asks once.
+| gate | what it runs | what it needs on the phone |
+|---|---|---|
+| Auto root via payload | the cached payload, through the same code the install screen drives | a verified payload cached, and *Install KernelSU* on |
+| Auto root via helper | the system-uid helper, asked to reroot | Shizuku running when the boot happens, and the helper installed |
+| Auto root via Dirty Frag | the chain, from this app alone | a daemon staged by an earlier run, or the feed when none has been |
+
+Coming on, each switch turns the other two off, and stops a gate that is already waiting rather than
+only the next boot. The Dirty Frag gate stages the daemon the phone already has, recorded when it was
+staged and checked against the digest the feed declared, so a boot needs no network; a phone that has
+never staged one resolves the sources exactly as a hand run does, and a record that names another
+KernelSU or the other tier is refused with the reason instead of being downloaded over.
+
+Nothing here roots a phone before it is unlocked. The app's boot receiver answers `BOOT_COMPLETED`, and
+the switches, the retries and the recorded plans all live in credential-encrypted storage, which is not
+mounted before the first unlock. (The one pre-unlock write in the project is the helper's DMC fix, a
+byte in a Samsung store, and it is not a root run.)
+
+The gates run in one process of their own (`:autoroot_gate`) because it outlives the app process that
+started it, which is exactly what a boot is: each gate decides whether this boot gets an attempt before
+doing anything else. The payload gate's rule is one pure function, in this order: the setting is
+on; KernelSU is not already answering; an install has not already been *verified in this kernel boot*;
+this boot's single attempt has not been spent; and a verified payload is cached. Only the last case asks
+anything of the user, and it asks once.
+
+Each flow keeps its own attempt for the boot, so one gate's run cannot spend another's: the payload
+install, the helper's reroot and the chain's run are three separate claims, keyed by the boot id. A
+one-shot **Reboot and retry** armed from a failed run is the fourth way a boot can have been asked for
+root, and it is a request for one boot rather than a setting so it takes precedence over whichever gate
+is also on. The chain's retry is resolved before the payload gate's own questions are even asked, since
+a phone whose only run has ever been a chain run has the payload gate off and no payload cached.
 
 Two of those are about telling boots apart. A userspace restart re-emits `BOOT_COMPLETED` while the
 kernel stays up, so the boot id not the event, and not a timestamp is what decides, and an install
@@ -981,7 +1093,7 @@ the wait uses its own shorter boot-settle floor (the manual one is a separate se
 gate has a deadline of its own and it reports through the notification it must show anyway,
 including which stage a failure stopped in. Failures are recorded in run history like any other run,
 and the notification's *Skip install* action is how one is stopped without opening the app the run
-in front of you, not the setting: root on boot keeps its value, and the action on a boot that is
+in front of you, not the setting: the gate keeps its value, and the action on a boot that is
 honouring a retry is the same one under the name *Skip retry*, which takes that request back too.
 
 Because it runs unattended, nothing in the gate is allowed to take its process down: the wake lock it
@@ -994,7 +1106,7 @@ declares, which is the general shape of that mistake.
 
 One deliberate difference from the reference: after a successful boot install it starts Shizuku when
 *auto start Shizuku on boot* is on, and does not restart the Android runtime by itself. A zygote restart
-closes whatever is open, which is a decision for the person using the phone *Restart Zygote* in
+closes whatever is open, which is a decision for the person using the phone: *Reboot Android* in
 Recovery Management is the same action with a finger on it.
 
 ## Post-root repair
@@ -1016,7 +1128,7 @@ name, which is the point.
   `/data/adb/ksud` is copied to `/data/local/tmp/.ksud-stage` and the action is refused unless the two
   hash the same, so nothing from elsewhere can be run in its place. A manager that was open while the
   reload happened is stopped afterwards rather than left showing the state from before it.
-- **Restart Zygote** recreates the Android runtime through init `setprop ctl.restart zygote`, which
+- **Reboot Android** recreates the Android runtime through init `setprop ctl.restart zygote`, which
   asks init to restart the service it owns, where killing Zygote from the app would leave init to
   recover by accident. The secondary Zygote, when the device runs one, goes first, because it can be
   restarted without the framework going down and so a failure there is still reportable. It waits for
@@ -1031,7 +1143,7 @@ name, which is the point.
   silence, and the child went on to act after the app had stopped listening. Whichever module is
   missing is named in the refusal too, because that is the child's own reading and the sentence around
   it is the app's.
-- **KernelSU soft reboot** hands the transition to the installed `ksud`, whose own command table
+- **Soft restart** hands the transition to the installed `ksud`, whose own command table
   lists `soft-reboot` as *Emulate system reboot*: it stops and restarts the userspace and walks the
   module lifecycle in its normal order. It takes a per-boot lock carrying the boot id and the owner's
   pid, so a second request in the same boot is told the first already owns it rather than racing it —
@@ -1041,9 +1153,10 @@ name, which is the point.
   whole-token matching keeps the `emulated-soft-reboot` marker in that same binary from counting. A
   daemon that did not return is stopped, and its last line is what the failure quotes, so the cause
   comes from KernelSU rather than from us.
-- **Reboot and unroot** clears *root on boot* first and then reboots, because a reboot that happened
-  first would come back rooted; if the request is refused, the setting is put back and the screen
-  follows the stored value rather than the value it hoped for. The reboot is only half of it: KernelSU
+- **Reboot and unroot** clears all three root gates first and then reboots, because a reboot that
+  happened first would come back rooted; if the request is refused, exactly what was on is put back,
+  read and written as one set so a phone carrying two gates keeps both, and the three switches re-read
+  storage rather than following the value the screen hoped for. The reboot is only half of it: KernelSU
   lives in the running kernel and its *modules*, *superuser grants* and *daemon* live in `/data/adb`,
   and every root solution on the phone writes into the shared `/data/local/tmp`, so both directories
   are **emptied** contents only, since KernelSU and init created them with modes the platform relies
@@ -1062,7 +1175,7 @@ on the device. The direct route is the fallback Shizuku first keeps the quiet pa
 it is what makes these cards usable on a phone that has root but no Shizuku. The fourth, *reboot and
 unroot*, is the one a plain shell can also do: the `shell` user holds the reboot permission, which is how
 `adb reboot` works, so that path asks through `svc power reboot` and the privilege check becomes the
-platform's rather than this script's with the app's own *root on boot* setting cleared before the
+platform's rather than this script's with the app's own *auto root via payload* setting cleared before the
 request exactly as the root path does. Because the routes fail for unrelated reasons, the refusal says
 which one it was: **KernelSU is not loaded in
 this boot** (nothing to run anything with; run the install), or **KernelSU is running but this app has
@@ -1155,8 +1268,8 @@ carries a version name that says which one it is:
 
 | build | version name | version code |
 |---|---|---|
-| CI | `0.4+ci.<run number>.<commit>` | base + seconds since 2026-01-01 UTC |
-| local | `0.4+local.<commit>` | base + seconds since 2026-01-01 UTC |
+| CI | `0.5+ci.<run number>.<commit>` | base + seconds since 2026-01-01 UTC |
+| local | `0.5+local.<commit>` | base + seconds since 2026-01-01 UTC |
 
 `appVersionBase` in `app/build.gradle.kts` is the only version written by hand. Both workflows
 read that literal out of the file, and a release tag is `v<base>`.
