@@ -99,6 +99,16 @@ data class InstallUiState(
      * that are already written, and so a screen that did not start the run can still tell which it is.
      */
     val kind: RunKind = RunKind.Payload,
+    /**
+     * The plan a universal run resolved, so a retry repeats *that* attempt rather than guessing.
+     *
+     * Held here rather than read back from [AppPreferences.universalPlan] because the two are not the same
+     * question: the preference records the last plan any run resolved, and this is the one the run on screen
+     * resolved - so a retry after a failure off an older record cannot run a daemon nobody chose. Null for a
+     * payload run, and for a universal run stopped in its support check, which is the case a retry has
+     * nothing to repeat and says so.
+     */
+    val universalPlan: UniversalPlan? = null,
 ) {
     /**
      * Whether a run is under way, which is not the same question as whether the app is working.
@@ -588,6 +598,9 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             // What this run is, written down before a byte is fetched: it is what an armed retry repeats on the
             // next boot, and by then this process is gone and often this boot with it.
             AppPreferences.setUniversalPlan(app, UniversalPlan(plan.flavor, tier))
+            // And the same answer kept in memory for the run's own retry, which is asked for while this screen
+            // is still open - see [retryRun], which is where an in-boot retry gets the flow it repeats.
+            mutableState.value = mutableState.value.copy(universalPlan = UniversalPlan(plan.flavor, tier))
 
             // 3. The manager, *before* anything is exploited rather than after it.
             //
@@ -625,7 +638,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             //    module and starts the daemon, and reports every step as it goes.
             setPhase(InstallPhase.Exploiting, app.getString(R.string.universal_step_exploit))
             val outcome = withContext(Dispatchers.IO) {
-                UniversalRootRun.run(app, daemon, plan.flavor, AppPreferences.restartAfterRoot(app)) { line ->
+                UniversalRootRun.run(app, daemon, plan.flavor) { line ->
                     appendLog(line)
                 }
             }
@@ -681,6 +694,26 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             }
             setPhase(InstallPhase.Installed, app.getString(R.string.universal_installed))
             endUniversalNotification()
+
+            // The restart the payload flow has always asked for and this one never did.
+            //
+            // The setting used to be handed to the chain, which could not act on it: the flag travelled into
+            // the shellcode and nothing read it, so a universal run with *Auto soft restart* on left the
+            // modules loaded and nothing asked the userspace to pick them up. A soft reboot is this app's own
+            // action, so the app takes it - after the result is written, because the restart ends everything
+            // this process is in the middle of, and refusing is a line in the log rather than a failure, since
+            // the phone is already rooted by here.
+            if (AppPreferences.restartAfterRoot(app)) {
+                appendLog(app.getString(R.string.log_restart_after_root))
+                val restart = runRecoveryAction(app, RecoveryTool.SoftReboot)
+                appendLog(
+                    if (restart.accepted) {
+                        app.getString(R.string.log_restart_after_root_accepted)
+                    } else {
+                        app.getString(R.string.log_restart_after_root_refused, restart.detail)
+                    },
+                )
+            }
         }
     }
 
@@ -893,6 +926,35 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             },
         )
         return requested
+    }
+
+    /**
+     * Repeats the attempt the run screen is about, as the flow that attempt was.
+     *
+     * The bar's in-boot answers ("Retry now", "Wait, then retry") end here. Both used to call [install]
+     * unconditionally, which is the payload flow - so a universal run's retry started an install of the other
+     * kind, and the run that followed described a flow nobody had asked for. The card guards which *answers*
+     * it offers by flow ([InstallScreen]'s own branch); this is the same rule at the other end, where the
+     * answer is acted on, so a control can only start the flow it belongs to.
+     *
+     * The two are not interchangeable: the payload flow resolves a cached payload and may need Shizuku, while
+     * the chain resolves its own daemon and needs neither.
+     */
+    fun retryRun(selectionId: String? = null) {
+        val state = mutableState.value
+        if (state.kind != RunKind.Universal) {
+            install(selectionId)
+            return
+        }
+        val plan = state.universalPlan
+        if (plan == null) {
+            // The run stopped before its payload existed, so there is no attempt to repeat. Said in the app log
+            // rather than on the screen: the record is closed, and the answer that state calls for is a
+            // restart - which the failure card offers as "Reboot and retry".
+            AppLog.warn(RUN_LOG_TAG, "Universal retry not started: the run resolved no plan to repeat")
+            return
+        }
+        startUniversalRun(plan.flavor, plan.tier)
     }
 
     /**
@@ -2534,8 +2596,9 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
     private fun startHistory() {
         // Every run starts here, so this is where the kind is reset as well as set: a payload run that follows
         // a universal one must not inherit its wording or its answers, and there is no other line every run
-        // passes through. [startUniversalRun] changes it immediately after this returns.
-        mutableState.value = mutableState.value.copy(kind = RunKind.Payload)
+        // passes through. [startUniversalRun] changes it immediately after this returns - and the plan goes
+        // with it, so a run that has not resolved one yet cannot be retried into the last run's.
+        mutableState.value = mutableState.value.copy(kind = RunKind.Payload, universalPlan = null)
         val entry = historyStore.create()
         activeHistoryEntry = entry
         activeRunId = entry.id

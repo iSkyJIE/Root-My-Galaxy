@@ -1,6 +1,10 @@
 # DFRoot's exploit chain, built as the app's own library.
 #
-# Ported from https://github.com/diabl0w/DFRoot (app/src/main/jni/CMakeLists.txt).
+# Ported from https://github.com/diabl0w/DFRoot (app/src/main/jni/CMakeLists.txt), at the revision that
+# moved the chain's privileged half into the kernel module (`e47ea6e`) - which is why `libc.S` is not in the
+# source list any more: that file, the libc patch, does not exist upstream. What replaced it is `libcxx.S`,
+# and exp.c's own `.incbin` embedding below is unchanged.
+#
 # This is a subdirectory rather than that project's top level, so the include
 # paths are written against CMAKE_CURRENT_SOURCE_DIR instead of CMAKE_SOURCE_DIR -
 # and that is the only structural change. The two custom build steps and the
@@ -34,7 +38,7 @@ add_custom_target(splicehelper_bin DEPENDS "${SPLICEHELPER}")
 set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -I${CMAKE_CURRENT_SOURCE_DIR}")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -I${CMAKE_CURRENT_SOURCE_DIR} -fno-stack-protector -fomit-frame-pointer")
 
-add_library(dfroot SHARED exp.c libcxx.S libc.S elf_parser.c)
+add_library(dfroot SHARED exp.c libcxx.S elf_parser.c)
 add_dependencies(dfroot splicehelper_bin)
 
 # Not build inputs - the `.incbin` directives already name them - but the
