@@ -1,0 +1,162 @@
+name: Release Build
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .release-trigger
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Release Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 cmake;3.22.1'
+          accept-android-sdk-licenses: true
+
+      - name: Setup NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r28
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Same owner-signing pattern already proven by OneuiXP:
+      # decode the repository secret exactly once and hand the resulting keystore to Gradle.
+      - name: Load owner signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for key in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!key:-}" ]; then
+              echo "::error::Missing repository Actions secret ${key}."
+              exit 1
+            fi
+          done
+
+          umask 077
+          KEYSTORE_PATH="$RUNNER_TEMP/owner.keystore"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+
+          KEYTOOL_INFO="$RUNNER_TEMP/owner-key.txt"
+          keytool -list -v \
+            -keystore "$KEYSTORE_PATH" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" > "$KEYTOOL_INFO"
+          KEYSTORE_TYPE="$(sed -n 's/^Keystore type: //p' "$KEYTOOL_INFO" | head -n 1 | tr -d '\r')"
+          if [ -z "$KEYSTORE_TYPE" ]; then
+            echo "::error::Could not determine owner keystore type."
+            exit 1
+          fi
+
+          {
+            echo "KEYSTORE_FILE=$KEYSTORE_PATH"
+            echo "KEYSTORE_TYPE=$KEYSTORE_TYPE"
+            echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "KEY_ALIAS=$KEY_ALIAS"
+            echo "KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+          echo "Owner signing key loaded successfully."
+
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Build APKs
+        run: ./gradlew assembleDebug assembleRelease --no-daemon
+
+      - name: Verify package, version and owner signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          AAPT="$BUILD_TOOLS/aapt"
+          RELEASE_APK="$(find app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
+          DEBUG_APK="$(find app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)"
+          test -s "$RELEASE_APK"
+          test -s "$DEBUG_APK"
+
+          EXPECTED_SHA256="$(keytool -list -v -keystore "$KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" \
+            | grep -m 1 'SHA256:' | awk '{print $2}' | tr -d ':' | tr 'A-F' 'a-f')"
+          test -n "$EXPECTED_SHA256"
+
+          for APK in "$RELEASE_APK" "$DEBUG_APK"; do
+            CERT="$($APKSIGNER verify --verbose --print-certs "$APK")"
+            SIGNED_SHA256="$(printf '%s\n' "$CERT" | sed -n 's/^.*certificate SHA-256 digest: //p' | head -n 1 | tr -d ': ' | tr 'A-F' 'a-f')"
+            if [ "$SIGNED_SHA256" != "$EXPECTED_SHA256" ]; then
+              echo "::error::$APK is not signed by the repository owner key."
+              exit 1
+            fi
+          done
+
+          BADGING="$($AAPT dump badging "$RELEASE_APK")"
+          printf '%s\n' "$BADGING" | grep -q "^package: name='dev.rootmygalaxy.rmgxp'"
+          printf '%s\n' "$BADGING" | grep -q "versionName='1.0.261002'"
+          printf '%s\n' "$BADGING" | grep -q "versionCode='2'"
+
+          echo "OWNER_CERT_SHA256=$EXPECTED_SHA256" >> "$GITHUB_ENV"
+
+      - name: Stage release assets
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          cp app/build/outputs/apk/release/*.apk release-assets/RootMyGalaxyXP-1.0.261002.apk
+          cp app/build/outputs/apk/debug/*.apk release-assets/RootMyGalaxyXP-1.0.261002-debug.apk
+          (cd release-assets && sha256sum *.apk > SHA256SUMS)
+
+      - name: Publish v1.0.261002
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v1.0.261002"
+          cat > release-notes.md <<EOF
+          # Root My Galaxy XP v1.0.261002
+
+          - Version name: 1.0.261002
+          - Version code: 2
+          - Package: dev.rootmygalaxy.rmgxp
+          - Signed with the repository owner signing key
+          - Signing certificate SHA-256: ${OWNER_CERT_SHA256}
+          EOF
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "Root My Galaxy XP $TAG" --notes-file release-notes.md --latest
+            gh release upload "$TAG" release-assets/* --clobber
+          else
+            gh release create "$TAG" release-assets/* \
+              --target "$GITHUB_SHA" \
+              --title "Root My Galaxy XP $TAG" \
+              --notes-file release-notes.md \
+              --latest
+          fi
