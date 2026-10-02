@@ -191,7 +191,7 @@ jobs:
             echo "\`RootGalaxyXP-${VERSION_NAME}-debug.apk\` is the same code with debugging on. Both are"
             echo "signed with the repository release key, so either installs over the other and over releases"
             echo "of this fork that share its package id. This build is its own app"
-            echo "(\`dev.rushiranpise.rmgnext\`), so Root My Galaxy is left alone if it is installed - and so"
+            echo "(\`dev.theskyjie.xproot\`), so Root My Galaxy is left alone if it is installed - and so"
             echo "are this app's own settings, history and superuser grant, which start empty here."
             echo
             if [ -n "$PREVIOUS_TAG" ]; then
