@@ -76,9 +76,19 @@ jobs:
           KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
           printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
 
+          if keytool -list -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" -storetype JKS >/dev/null 2>&1; then
+            KEYSTORE_TYPE="JKS"
+          elif keytool -list -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" -storetype PKCS12 >/dev/null 2>&1; then
+            KEYSTORE_TYPE="PKCS12"
+          else
+            echo "::error::Repository signing keystore could not be opened as JKS or PKCS12."
+            exit 1
+          fi
+          echo "Using repository signing keystore type: $KEYSTORE_TYPE"
+
           {
             echo "KEYSTORE_FILE=$KEYSTORE_PATH"
-            echo "KEYSTORE_TYPE=PKCS12"
+            echo "KEYSTORE_TYPE=$KEYSTORE_TYPE"
             echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
             echo "KEY_ALIAS=$KEY_ALIAS"
             echo "KEY_PASSWORD=$KEY_PASSWORD"

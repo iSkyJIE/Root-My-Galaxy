@@ -67,7 +67,15 @@ jobs:
             KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD_SECRET"
             KEY_ALIAS="$KEY_ALIAS_SECRET"
             KEY_PASSWORD="$KEY_PASSWORD_SECRET"
-            KEYSTORE_TYPE="PKCS12"
+            if keytool -list -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" -storetype JKS >/dev/null 2>&1; then
+              KEYSTORE_TYPE="JKS"
+            elif keytool -list -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" -storetype PKCS12 >/dev/null 2>&1; then
+              KEYSTORE_TYPE="PKCS12"
+            else
+              echo "::error::Configured signing keystore could not be opened as JKS or PKCS12."
+              exit 1
+            fi
+            echo "Using repository signing keystore type: $KEYSTORE_TYPE"
             echo "ephemeral=false" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::Release signing secrets are not configured; using an ephemeral CI-only key."
