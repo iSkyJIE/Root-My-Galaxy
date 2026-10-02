@@ -71,13 +71,16 @@ jobs:
           KEYTOOL_INFO="$RUNNER_TEMP/owner-key.txt"
           keytool -list -v \
             -keystore "$KEYSTORE_PATH" \
-            -storepass "$KEYSTORE_PASSWORD" \
-            -alias "$KEY_ALIAS" > "$KEYTOOL_INFO"
+            -storepass "$KEYSTORE_PASSWORD" > "$KEYTOOL_INFO"
           KEYSTORE_TYPE="$(sed -n 's/^Keystore type: //p' "$KEYTOOL_INFO" | head -n 1 | tr -d '\r')"
           if [ -z "$KEYSTORE_TYPE" ]; then
             echo "::error::Could not determine owner keystore type."
             exit 1
           fi
+          keytool -list \
+            -keystore "$KEYSTORE_PATH" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" >/dev/null
 
           {
             echo "KEYSTORE_FILE=$KEYSTORE_PATH"
@@ -86,7 +89,7 @@ jobs:
             echo "KEY_ALIAS=$KEY_ALIAS"
             echo "KEY_PASSWORD=$KEY_PASSWORD"
           } >> "$GITHUB_ENV"
-          echo "Owner signing key loaded successfully."
+          echo "Owner signing key loaded successfully ($KEYSTORE_TYPE)."
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon
