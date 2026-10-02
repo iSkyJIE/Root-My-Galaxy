@@ -110,7 +110,6 @@ android {
             val storeFilePath = signingProperty("KEYSTORE_FILE", "storeFile")
             if (storeFilePath != null) {
                 storeFile = rootProject.file(storeFilePath)
-                storeType = signingProperty("KEYSTORE_TYPE", "storeType") ?: "PKCS12"
                 storePassword = signingProperty("KEYSTORE_PASSWORD", "storePassword")
                 keyAlias = signingProperty("KEY_ALIAS", "keyAlias")
                 keyPassword = signingProperty("KEY_PASSWORD", "keyPassword")
