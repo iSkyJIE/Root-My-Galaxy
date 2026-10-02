@@ -74,19 +74,37 @@ jobs:
           : "${KEY_PASSWORD:?Repository secret KEY_PASSWORD is not set}"
 
           KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
-          NORMALIZED_KEYSTORE="$(printf '%s' "$KEYSTORE_BASE64" | tr -d '\r\n\t ')"
-          NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE#KEYSTORE_BASE64=}"
-          NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE#\"}"
-          NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE%\"}"
-          NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE#\'}"
-          NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE%\'}"
-          NORMALIZED_KEYSTORE="$(printf '%s' "$NORMALIZED_KEYSTORE" | sed -E 's#^data:[^,]*,##' | tr '_-' '/+')"
-          case $(("${#NORMALIZED_KEYSTORE}" % 4)) in
-            2) NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE}==" ;;
-            3) NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE}=" ;;
-          esac
-          printf '%s' "$NORMALIZED_KEYSTORE" | base64 -d --ignore-garbage > "$KEYSTORE_PATH"
-
+          export KEYSTORE_PATH
+          python3 - <<'PY'
+          import base64, os, re
+          raw = os.environ["KEYSTORE_BASE64"].strip()
+          tokens = re.findall(r"[A-Za-z0-9+/_-]{40,}={0,2}", raw)
+          if not tokens:
+              raise SystemExit("KEYSTORE_BASE64 contains no Base64 payload")
+          token = max(tokens, key=len).replace("-", "+").replace("_", "/")
+          token += "=" * ((4 - len(token) % 4) % 4)
+          data = base64.b64decode(token, validate=False)
+          if not data:
+              raise SystemExit("KEYSTORE_BASE64 decoded to an empty file")
+          path = os.environ["KEYSTORE_PATH"]
+          open(path, "wb").write(data)
+          # Also prepare a second decode when the first layer is itself Base64 text.
+          try:
+              text = data.decode("ascii").strip()
+          except UnicodeDecodeError:
+              text = ""
+          tokens2 = re.findall(r"[A-Za-z0-9+/_-]{40,}={0,2}", text)
+          if tokens2:
+              token2 = max(tokens2, key=len).replace("-", "+").replace("_", "/")
+              token2 += "=" * ((4 - len(token2) % 4) % 4)
+              try:
+        data2 = base64.b64decode(token2, validate=False)
+                  if data2:
+                      open(path + ".second", "wb").write(data2)
+              except Exception:
+                  pass
+          PY
+          
           detect_store_type() {
             local candidate="$1"
             if keytool -list -keystore "$candidate" -storepass "$KEYSTORE_PASSWORD" -storetype JKS >/dev/null 2>&1; then
@@ -101,22 +119,14 @@ jobs:
           }
 
           KEYSTORE_TYPE="$(detect_store_type "$KEYSTORE_PATH" || true)"
-          if [ -z "$KEYSTORE_TYPE" ]; then
-            SECOND="$RUNNER_TEMP/release-second-decode"
-            SECOND_TEXT="$(tr -d '\r\n\t ' < "$KEYSTORE_PATH" | tr '_-' '/+')"
-            case $(("${#SECOND_TEXT}" % 4)) in
-              2) SECOND_TEXT="${SECOND_TEXT}==" ;;
-              3) SECOND_TEXT="${SECOND_TEXT}=" ;;
-            esac
-            if printf '%s' "$SECOND_TEXT" | base64 -d --ignore-garbage > "$SECOND" 2>/dev/null; then
-              SECOND_TYPE="$(detect_store_type "$SECOND" || true)"
-              if [ -n "$SECOND_TYPE" ]; then
-                mv "$SECOND" "$KEYSTORE_PATH"
-                KEYSTORE_TYPE="$SECOND_TYPE"
-              fi
+          if [ -z "$KEYSTORE_TYPE" ] && [ -s "$KEYSTORE_PATH.second" ]; then
+            SECOND_TYPE="$(detect_store_type "$KEYSTORE_PATH.second" || true)"
+            if [ -n "$SECOND_TYPE" ]; then
+              mv "$KEYSTORE_PATH.second" "$KEYSTORE_PATH"
+              KEYSTORE_TYPE="$SECOND_TYPE"
             fi
-            rm -f "$SECOND"
           fi
+          rm -f "$KEYSTORE_PATH.second"
 
           if [ -z "$KEYSTORE_TYPE" ]; then
             echo "::error::The configured owner keystore is not readable with the configured store password."
