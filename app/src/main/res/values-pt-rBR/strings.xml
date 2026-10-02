@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Root My Galaxy Next</string>
+    <string name="app_name">Root Galaxy XP</string>
     <string name="nav_overview">Início</string>
     <string name="nav_history">Histórico</string>
     <string name="nav_settings">Configurações</string>
@@ -112,7 +112,7 @@
     <string name="repo_response_too_large">A resposta excedeu seu limite de tamanho</string>
     <string name="repo_api_limited">O limite de requisições do GitHub foi atingido; tente novamente em alguns minutos</string>
     <string name="open_github">Abrir GitHub</string>
-    <string name="github_card_title">Explorar o Root My Galaxy</string>
+    <string name="github_card_title">Explorar o Root Galaxy XP</string>
     <string name="github_card_description">Ver o código-fonte e instruções de uso.</string>
     <string name="action_continue">Continuar mesmo assim</string>
     <string name="action_next">Próximo</string>
@@ -145,8 +145,8 @@
     <string name="log_shizuku_prepare">[*] Preparando a execução do Shizuku</string>
     <string name="log_shizuku_permission">[+] Permissão do Shizuku concedida</string>
     <string name="about">Sobre</string>
-    <string name="about_title">Sobre o Root My Galaxy</string>
-    <string name="about_description">Sobre o Root My Galaxy</string>
+    <string name="about_title">Sobre o Root Galaxy XP</string>
+    <string name="about_description">Sobre o Root Galaxy XP</string>
     <string name="about_body">Instalador de um toque que usa uma exploração de kernel para enraizar dispositivos Samsung Galaxy compatíveis.</string>
     <string name="kernelsu_card_description">Solução de root baseada em kernel para Android</string>
     <string name="history_shizuku_used">Shizuku: usado</string>

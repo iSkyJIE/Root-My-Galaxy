@@ -17,7 +17,7 @@
     <string name="reboot_confirm_body">手机将重启进入 %1$s，并且不会自动返回此界面。
 
 在那里同时按住电源键和音量下键 7 秒即可重新启动手机。</string>
-    <string name="recovery_shell_unavailable">KernelSU 正在运行，但此应用没有 Root 权限。请在 KernelSU 中给 Root My Galaxy Next 授予 Root，或启动 Shizuku 后重试。</string>
+    <string name="recovery_shell_unavailable">KernelSU 正在运行，但此应用没有 Root 权限。请在 KernelSU 中给 Root Galaxy XP 授予 Root，或启动 Shizuku 后重试。</string>
     <string name="recovery_shizuku_needs_root">Shizuku 正在运行，但此操作需要 Root，而 Shizuku 本身没有 Root。请先加载 KernelSU，或重新运行安装。</string>
     <string name="recovery_scheduled">已安排。Android 即将重启。</string>
     <string name="recovery_reboot_scheduled">已安排。手机将以无 Root 状态重启。</string>

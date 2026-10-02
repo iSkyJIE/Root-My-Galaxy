@@ -71,7 +71,7 @@ android {
         // product, and a user who installs this by mistake can tell from the id where it came from.
         // The name has to match `DfrInstall.STAGE_TWO_PACKAGE`, which is what `pm install` and the
         // uninstall name; `StageTwoIdentityTest` holds the two together.
-        applicationId = "dev.rushiranpise.rmgnext.helper"
+        applicationId = "dev.theskyjie.xproot.helper"
         minSdk = 33
         targetSdk = 36
         versionCode = helperVersionCode

@@ -203,13 +203,16 @@ data class LoadedGenericDaemons(
 class PayloadRepository(private val context: Context) {
     fun loadCatalog(): LoadedCatalog {
         val sources = AppPreferences.payloadSources(context).enabledSources()
-        require(sources.isNotEmpty()) { context.getString(R.string.repo_no_source_enabled) }
 
-        val targets = mutableListOf<TargetProfile>()
+        // Root Galaxy XP carries one verified device-specific payload inside the APK. It is seeded
+        // before network sources so that this target remains usable even when GitHub is unreachable.
+        val targets = mutableListOf(BundledPayload.profile)
         val failures = mutableListOf<String>()
         sources.forEach { source ->
             try {
-                targets += loadSource(source)
+                targets += loadSource(source).filterNot { remote ->
+                    remote.profileId == BundledPayload.PROFILE_ID
+                }
             } catch (error: Throwable) {
                 val detail = context.getString(
                     R.string.repo_source_failed,
@@ -500,6 +503,11 @@ class PayloadRepository(private val context: Context) {
         // how much may be read rather than a value that has to match.
         val checked = artifact.checksSize
         onProgress(context.getString(R.string.repo_downloading, label))
+        if (BundledPayload.isAsset(artifact)) {
+            val staged = BundledPayload.stageArtifact(context, artifact, destination)
+            onProgress(context.getString(R.string.repo_verified, label))
+            return staged
+        }
         val temporary = File(destination.parentFile, "${destination.name}.part")
         val connection = open(artifact.url)
         require(!checked || connection.contentLengthLong == -1L || connection.contentLengthLong == artifact.size) {
@@ -686,7 +694,7 @@ class PayloadRepository(private val context: Context) {
             connectTimeout = 15_000
             readTimeout = 60_000
             instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "S25URoot/${BuildConfig.VERSION_NAME}")
+            setRequestProperty("User-Agent", "RootGalaxyXP/${BuildConfig.VERSION_NAME}")
             accept?.let { setRequestProperty("Accept", it) }
             connect()
             require(responseCode == HttpURLConnection.HTTP_OK) {
