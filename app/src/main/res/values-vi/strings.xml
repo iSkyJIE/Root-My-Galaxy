@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Root My Galaxy Next</string>
+    <string name="app_name">Root Galaxy XP</string>
     <string name="nav_overview">Trang chủ</string>
     <string name="nav_history">Lịch sử</string>
     <string name="nav_settings">Cài đặt</string>
@@ -105,7 +105,7 @@
     <string name="repo_response_too_large">Phản hồi vượt quá giới hạn kích thước</string>
     <string name="repo_api_limited">Đã đạt giới hạn yêu cầu của GitHub; hãy thử lại sau vài phút</string>
     <string name="open_github">Mở GitHub</string>
-    <string name="github_card_title">Khám phá Root My Galaxy</string>
+    <string name="github_card_title">Khám phá Root Galaxy XP</string>
     <string name="github_card_description">Xem mã nguồn và hướng dẫn sử dụng.</string>
     <string name="action_continue">Vẫn tiếp tục</string>
     <string name="action_next">Tiếp theo</string>
@@ -138,8 +138,8 @@
     <string name="kernel_version_mismatch_title">Kernel không khớp</string>
     <string name="kernel_version_mismatch_body">Điện thoại này dùng kernel %1$s, nhưng payload đã chọn chỉ hỗ trợ %2$s. Các offset có thể không tương thích.</string>
     <string name="about">Giới thiệu</string>
-    <string name="about_title">Giới thiệu về Root My Galaxy</string>
-    <string name="about_description">Giới thiệu về Root My Galaxy</string>
+    <string name="about_title">Giới thiệu về Root Galaxy XP</string>
+    <string name="about_description">Giới thiệu về Root Galaxy XP</string>
     <string name="about_body">Trình cài đặt một chạm sử dụng lỗ hổng kernel để root các thiết bị Samsung Galaxy được hỗ trợ.</string>
     <string name="history_payload">Payload: %1$s</string>
     <string name="export_log">Xuất nhật ký</string>
