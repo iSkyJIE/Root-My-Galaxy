@@ -1,6 +1,13 @@
 name: Release Build
 
 on:
+  # A deliberate release trigger file lets main stay quiet for ordinary maintenance while still
+  # allowing a release to be started entirely from the repository when its contents are updated.
+  push:
+    branches:
+      - main
+    paths:
+      - .release-trigger
   workflow_dispatch:
     inputs:
       tag_name:
