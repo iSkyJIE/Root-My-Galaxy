@@ -69,34 +69,33 @@ jobs:
 
             export KEYSTORE_PATH
             python3 - <<'PY'
-            import base64, os, re
-            raw = os.environ["KEYSTORE_BASE64"].strip()
-            tokens = re.findall(r"[A-Za-z0-9+/_-]{40,}={0,2}", raw)
-            if not tokens:
-                raise SystemExit("KEYSTORE_BASE64 contains no Base64 payload")
-            token = max(tokens, key=len).replace("-", "+").replace("_", "/")
-            token += "=" * ((4 - len(token) % 4) % 4)
-            data = base64.b64decode(token, validate=False)
-            if not data:
-                raise SystemExit("KEYSTORE_BASE64 decoded to an empty file")
-            path = os.environ["KEYSTORE_PATH"]
-            open(path, "wb").write(data)
-            # Also prepare a second decode when the first layer is itself Base64 text.
-            try:
-                text = data.decode("ascii").strip()
-            except UnicodeDecodeError:
-                text = ""
-            tokens2 = re.findall(r"[A-Za-z0-9+/_-]{40,}={0,2}", text)
-            if tokens2:
-                token2 = max(tokens2, key=len).replace("-", "+").replace("_", "/")
-                token2 += "=" * ((4 - len(token2) % 4) % 4)
-                try:
-        data2 = base64.b64decode(token2, validate=False)
-                    if data2:
-                        open(path + ".second", "wb").write(data2)
-                except Exception:
-                    pass
-            PY
+          import base64, os, re
+          raw = os.environ["KEYSTORE_BASE64"].strip()
+          tokens = re.findall(r"[A-Za-z0-9+/_-]{40,}={0,2}", raw)
+          if not tokens:
+              raise SystemExit("KEYSTORE_BASE64 contains no Base64 payload")
+          token = max(tokens, key=len).replace("-", "+").replace("_", "/")
+          token += "=" * ((4 - len(token) % 4) % 4)
+          data = base64.b64decode(token, validate=False)
+          if not data:
+              raise SystemExit("KEYSTORE_BASE64 decoded to an empty file")
+          path = os.environ["KEYSTORE_PATH"]
+          open(path, "wb").write(data)
+          try:
+              text = data.decode("ascii").strip()
+          except UnicodeDecodeError:
+              text = ""
+          tokens2 = re.findall(r"[A-Za-z0-9+/_-]{40,}={0,2}", text)
+          if tokens2:
+              token2 = max(tokens2, key=len).replace("-", "+").replace("_", "/")
+              token2 += "=" * ((4 - len(token2) % 4) % 4)
+              try:
+                  data2 = base64.b64decode(token2, validate=False)
+                  if data2:
+                      open(path + ".second", "wb").write(data2)
+              except Exception:
+                  pass
+          PY
             
             detect_store_type() {
               local candidate="$1"

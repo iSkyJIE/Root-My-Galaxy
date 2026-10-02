@@ -88,7 +88,6 @@ jobs:
               raise SystemExit("KEYSTORE_BASE64 decoded to an empty file")
           path = os.environ["KEYSTORE_PATH"]
           open(path, "wb").write(data)
-          # Also prepare a second decode when the first layer is itself Base64 text.
           try:
               text = data.decode("ascii").strip()
           except UnicodeDecodeError:
@@ -98,7 +97,7 @@ jobs:
               token2 = max(tokens2, key=len).replace("-", "+").replace("_", "/")
               token2 += "=" * ((4 - len(token2) % 4) % 4)
               try:
-        data2 = base64.b64decode(token2, validate=False)
+                  data2 = base64.b64decode(token2, validate=False)
                   if data2:
                       open(path + ".second", "wb").write(data2)
               except Exception:
