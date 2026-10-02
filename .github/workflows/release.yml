@@ -74,12 +74,18 @@ jobs:
           : "${KEY_PASSWORD:?Repository secret KEY_PASSWORD is not set}"
 
           KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
-          NORMALIZED_KEYSTORE="$(printf '%s' "$KEYSTORE_BASE64" | tr -d '\r\n\t ' | sed -E 's#^data:[^,]*,##' | tr '_-' '/+')"
+          NORMALIZED_KEYSTORE="$(printf '%s' "$KEYSTORE_BASE64" | tr -d '\r\n\t ')"
+          NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE#KEYSTORE_BASE64=}"
+          NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE#\"}"
+          NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE%\"}"
+          NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE#\'}"
+          NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE%\'}"
+          NORMALIZED_KEYSTORE="$(printf '%s' "$NORMALIZED_KEYSTORE" | sed -E 's#^data:[^,]*,##' | tr '_-' '/+')"
           case $(("${#NORMALIZED_KEYSTORE}" % 4)) in
             2) NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE}==" ;;
             3) NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE}=" ;;
           esac
-          printf '%s' "$NORMALIZED_KEYSTORE" | base64 -d > "$KEYSTORE_PATH"
+          printf '%s' "$NORMALIZED_KEYSTORE" | base64 -d --ignore-garbage > "$KEYSTORE_PATH"
 
           detect_store_type() {
             local candidate="$1"
@@ -102,7 +108,7 @@ jobs:
               2) SECOND_TEXT="${SECOND_TEXT}==" ;;
               3) SECOND_TEXT="${SECOND_TEXT}=" ;;
             esac
-            if printf '%s' "$SECOND_TEXT" | base64 -d > "$SECOND" 2>/dev/null; then
+            if printf '%s' "$SECOND_TEXT" | base64 -d --ignore-garbage > "$SECOND" 2>/dev/null; then
               SECOND_TYPE="$(detect_store_type "$SECOND" || true)"
               if [ -n "$SECOND_TYPE" ]; then
                 mv "$SECOND" "$KEYSTORE_PATH"
