@@ -110,6 +110,14 @@ jobs:
               return 1
             }
 
+            KEYSTORE_SIZE="$(wc -c < "$KEYSTORE_PATH" | tr -d ' ')"
+            KEYSTORE_MAGIC="$(od -An -tx1 -N8 "$KEYSTORE_PATH" | tr -d ' \n')"
+            echo "Decoded owner keystore candidate: bytes=$KEYSTORE_SIZE magic=$KEYSTORE_MAGIC"
+            if [ -s "$KEYSTORE_PATH.second" ]; then
+              SECOND_SIZE="$(wc -c < "$KEYSTORE_PATH.second" | tr -d ' ')"
+              SECOND_MAGIC="$(od -An -tx1 -N8 "$KEYSTORE_PATH.second" | tr -d ' \n')"
+              echo "Second decoded candidate: bytes=$SECOND_SIZE magic=$SECOND_MAGIC"
+            fi
             KEYSTORE_TYPE="$(detect_store_type "$KEYSTORE_PATH" || true)"
             if [ -z "$KEYSTORE_TYPE" ] && [ -s "$KEYSTORE_PATH.second" ]; then
               SECOND_TYPE="$(detect_store_type "$KEYSTORE_PATH.second" || true)"
