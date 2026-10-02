@@ -308,7 +308,7 @@ internal object DfrInstall {
      * builds the [STAGE_TWO_PACKAGE] artifact, so a change on one side with no change on the other is a
      * download that nothing installs.
      */
-    const val STAGE_TWO_PACKAGE = "dev.rushiranpise.rmgnext.helper"
+    const val STAGE_TWO_PACKAGE = "dev.theskyjie.xproot.helper"
     const val STAGE_TWO_ACTIVITY = "dev.busung.s25uroot.dfr.stage2.Stage2Activity"
 
     /**
