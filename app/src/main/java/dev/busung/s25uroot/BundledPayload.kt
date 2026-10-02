@@ -33,6 +33,18 @@ internal object BundledPayload {
 
     fun isAsset(artifact: RemoteArtifact): Boolean = artifact.url.startsWith(ASSET_PREFIX)
 
+    /**
+     * The built-in payload when it can actually run on this phone.
+     *
+     * This is deliberately side-effect free so Settings and the run-plan preview can show the
+     * offline fallback without recording a payload as selected just because the screen was opened.
+     */
+    fun availableProfile(requestedProfileId: String? = null): TargetProfile? {
+        if (requestedProfileId != null && requestedProfileId != PROFILE_ID) return null
+        val snapshot = DeviceSnapshot.current()
+        return profile.takeIf { it.matches(snapshot) }
+    }
+
     fun isAvailable(context: Context, requestedProfileId: String? = null): Boolean =
         runCatching { profileFor(context, requestedProfileId) }.isSuccess
 

@@ -1079,8 +1079,14 @@ private fun RootApp(
     // What the cache holds, kept here because the plan needs it and the plan is built synchronously.
     // Reloaded whenever a run's phase changes, since a finished run is what publishes a cache entry.
     var cachedPayload by remember { mutableStateOf<CachedPayload?>(null) }
+    var bundledOfflineProfile by remember { mutableStateOf<TargetProfile?>(null) }
     LaunchedEffect(installState.phase) {
-        cachedPayload = withContext(Dispatchers.IO) { KnownGoodPayloadStore.describe(context) }
+        val (cached, bundled) = withContext(Dispatchers.IO) {
+            KnownGoodPayloadStore.describe(context) to
+                runCatching { BundledPayload.availableProfile() }.getOrNull()
+        }
+        cachedPayload = cached
+        bundledOfflineProfile = bundled
     }
     // Built on demand rather than on every recomposition: only the run-plan dialog needs it.
     val runPlan: () -> RunPlanDisplay = {
@@ -1089,7 +1095,7 @@ private fun RootApp(
         // avoid, and an offline plan that named some other target's source would be a plan about
         // another app's run.
         val resolved = if (payloadMode == PayloadMode.Offline) {
-            cachedPayload?.profile()
+            cachedPayload?.profile() ?: bundledOfflineProfile
         } else {
             targetCatalog.profiles.resolveFor(device)
         }
@@ -5069,9 +5075,15 @@ private fun SettingsPage(
                 // Read when the section is opened rather than on every recomposition: it is a file
                 // read, and what it describes changes only when a run finishes.
                 var cached by remember { mutableStateOf<CachedPayload?>(null) }
+                var bundled by remember { mutableStateOf<TargetProfile?>(null) }
                 var showCachedDialog by remember { mutableStateOf(false) }
                 LaunchedEffect(Unit) {
-                    cached = withContext(Dispatchers.IO) { KnownGoodPayloadStore.describe(context) }
+                    val (saved, builtIn) = withContext(Dispatchers.IO) {
+                        KnownGoodPayloadStore.describe(context) to
+                            runCatching { BundledPayload.availableProfile() }.getOrNull()
+                    }
+                    cached = saved
+                    bundled = builtIn
                 }
                 SettingsCard(
                     // The arrow-into-a-box is the "downloaded and kept" mark, which is what this row is;
@@ -5087,6 +5099,8 @@ private fun SettingsPage(
                     // still stated in full in the dialog, which is where a precise string belongs.
                     value = cached?.displayName?.takeIf { it.isNotBlank() }
                         ?: cached?.profileId
+                        ?: bundled?.displayName?.takeIf { it.isNotBlank() }
+                        ?: bundled?.profileId
                         ?: stringResource(R.string.settings_cached_payload_none),
                     position = SettingsCardPosition.Middle,
                     onClick = {
@@ -5097,6 +5111,7 @@ private fun SettingsPage(
                 if (showCachedDialog) {
                     CachedPayloadDialog(
                         cached = cached,
+                        bundled = bundled,
                         onForget = {
                             showCachedDialog = false
                             cached = null
@@ -7612,6 +7627,7 @@ private data class RunPlanDisplay(
 @Composable
 private fun CachedPayloadDialog(
     cached: CachedPayload?,
+    bundled: TargetProfile?,
     onForget: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -7630,7 +7646,8 @@ private fun CachedPayloadDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (cached == null) {
+                val saved = cached?.profile() ?: bundled
+                if (saved == null) {
                     Text(stringResource(R.string.settings_cached_payload_none))
                 } else {
                     // The name first and the id under it, which together are what the settings row
@@ -7638,20 +7655,26 @@ private fun CachedPayloadDialog(
                     // where a long precise string costs nothing.
                     RunPlanRow(
                         stringResource(R.string.cached_payload_device),
-                        cached.displayName,
+                        saved.displayName,
                         first = true,
                     )
-                    RunPlanRow(stringResource(R.string.cached_payload_profile), cached.profileId)
+                    RunPlanRow(stringResource(R.string.cached_payload_profile), saved.profileId)
                     RunPlanRow(
                         stringResource(R.string.cached_payload_exploit_sha),
-                        cached.exploit.sha256 ?: stringResource(R.string.cached_payload_no_digest),
+                        saved.exploit.sha256 ?: stringResource(R.string.cached_payload_no_digest),
                     )
                     RunPlanRow(
                         stringResource(R.string.cached_payload_kernelsu_sha),
-                        cached.kernelSu.sha256 ?: stringResource(R.string.cached_payload_no_digest),
+                        saved.kernelSu.sha256 ?: stringResource(R.string.cached_payload_no_digest),
                     )
                     Text(
-                        stringResource(R.string.cached_payload_note),
+                        stringResource(
+                            if (cached != null) {
+                                R.string.cached_payload_note
+                            } else {
+                                R.string.cached_payload_bundled_note
+                            },
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

@@ -184,6 +184,7 @@
     <string name="cached_payload_exploit_sha">Exploit SHA-256</string>
     <string name="cached_payload_kernelsu_sha">KernelSU SHA-256</string>
     <string name="cached_payload_note">Saved only after a KernelSU install that worked. Each file is checked again before it is used.</string>
+    <string name="cached_payload_bundled_note">Built into Root Galaxy XP and checked before use. It is available for offline runs and cannot be removed from the app.</string>
     <string name="cached_payload_no_digest">Unknown</string>
     <string name="cached_payload_forget">Remove</string>
     <string name="status_loading_cached">Loading saved payload</string>

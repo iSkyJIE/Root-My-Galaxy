@@ -39,6 +39,7 @@
     <string name="cached_payload_exploit_sha">Exploit SHA-256</string>
     <string name="cached_payload_kernelsu_sha">KernelSU SHA-256</string>
     <string name="cached_payload_note">仅在 KernelSU 安装成功后保存。每个文件在使用前都会再次校验。</string>
+    <string name="cached_payload_bundled_note">随 Root Galaxy XP 内置，使用前会校验。可直接用于离线运行，无法从应用中移除。</string>
     <string name="cached_payload_no_digest">未知</string>
     <string name="cached_payload_forget">移除</string>
     <string name="status_loading_cached">正在加载已保存的 Payload</string>
