@@ -28,7 +28,7 @@ fun signingProperty(envName: String, propertyName: String): String? =
 // The base version, and the only place either number is written by hand. A release tag is
 // `v$appVersionBase` and both workflows read this literal out of this file, so it has to stay a
 // plain string here rather than being assembled from somewhere else.
-val appVersionBase = "0.7"
+val appVersionBase = "1.0.261002"
 
 // An offset under the version code, not a version of its own: the code is this plus the clock, and the
 // only rule is that it may be raised and never lowered - lowering it would put a new build below an
@@ -93,7 +93,7 @@ android {
         // action string, both provider authorities and the R class, and moving it would touch the
         // whole tree to change nothing anyone can see - the id below is the install's identity, and it
         // is the only one Android checks.
-        applicationId = "dev.rushiranpise.rmgnext"
+        applicationId = "dev.theskyjie.xproot"
         minSdk = 33
         targetSdk = 36
         versionCode = appVersionCode
