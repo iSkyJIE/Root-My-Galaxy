@@ -284,14 +284,22 @@ jobs:
 
           TITLE="dev to main: ${VERSION_NAME}, ${AHEAD} commit(s)"
           PR="$OPEN_PR"
+          URL=""
           if [ -n "$PR" ]; then
-            gh pr edit "$PR" --title "$TITLE" --body-file "$RUNNER_TEMP/pr.md"
-            URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/pull/${PR}"
-            echo "Updated pull request #${PR}: ${URL}"
+            if gh pr edit "$PR" --title "$TITLE" --body-file "$RUNNER_TEMP/pr.md"; then
+              URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/pull/${PR}"
+              echo "Updated pull request #${PR}: ${URL}"
+            else
+              echo "::warning::Build passed, but GitHub Actions is not permitted to update pull request #${PR}."
+            fi
           else
-            OUT="$(gh pr create --base main --head dev --title "$TITLE" --body-file "$RUNNER_TEMP/pr.md")"
-            echo "$OUT"
-            URL="$(printf '%s\n' "$OUT" | grep -oE 'https://[^ ]+/pull/[0-9]+' | tail -n 1 || true)"
+            if OUT="$(gh pr create --base main --head dev --title "$TITLE" --body-file "$RUNNER_TEMP/pr.md" 2>&1)"; then
+              echo "$OUT"
+              URL="$(printf '%s\n' "$OUT" | grep -oE 'https://[^ ]+/pull/[0-9]+' | tail -n 1 || true)"
+            else
+              echo "::warning::Build passed, but GitHub Actions is not permitted to create the dev-to-main pull request."
+              echo "$OUT"
+            fi
           fi
           [ -n "${URL:-}" ] || URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/pulls"
 

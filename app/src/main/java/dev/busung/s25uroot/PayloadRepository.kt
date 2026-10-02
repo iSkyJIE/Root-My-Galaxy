@@ -203,16 +203,17 @@ data class LoadedGenericDaemons(
 class PayloadRepository(private val context: Context) {
     fun loadCatalog(): LoadedCatalog {
         val sources = AppPreferences.payloadSources(context).enabledSources()
+        require(sources.isNotEmpty()) { context.getString(R.string.repo_no_source_enabled) }
 
-        // Root Galaxy XP carries one verified device-specific payload inside the APK. It is seeded
-        // before network sources so that this target remains usable even when GitHub is unreachable.
-        val targets = mutableListOf(BundledPayload.profile)
+        // Online mode is only the configured network catalogs. The APK-bundled q7q payload belongs
+        // to Saved/offline and is resolved through KnownGoodPayloadStore/BundledPayload instead.
+        // Keeping those two paths separate prevents the built-in offline payload from appearing in
+        // the Online target list.
+        val targets = mutableListOf<TargetProfile>()
         val failures = mutableListOf<String>()
         sources.forEach { source ->
             try {
-                targets += loadSource(source).filterNot { remote ->
-                    remote.profileId == BundledPayload.PROFILE_ID
-                }
+                targets += loadSource(source)
             } catch (error: Throwable) {
                 val detail = context.getString(
                     R.string.repo_source_failed,
