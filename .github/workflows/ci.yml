@@ -63,7 +63,16 @@ jobs:
           KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
           if [ -n "${KEYSTORE_BASE64:-}" ] && [ -n "${KEYSTORE_PASSWORD_SECRET:-}" ] && \
              [ -n "${KEY_ALIAS_SECRET:-}" ] && [ -n "${KEY_PASSWORD_SECRET:-}" ]; then
-            printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+            NORMALIZED_KEYSTORE="$(printf '%s' "$KEYSTORE_BASE64" \\
+              | tr -d '\\r\\n\\t ' \\
+              | sed -E 's#^data:[^,]*,##' \\
+              | tr '_-' '/+')"
+            case $((${#NORMALIZED_KEYSTORE} % 4)) in
+              2) NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE}==" ;;
+              3) NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE}=" ;;
+            esac
+            printf '%s' "$NORMALIZED_KEYSTORE" | base64 -d > "$KEYSTORE_PATH"
+            test -s "$KEYSTORE_PATH"
             KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD_SECRET"
             KEY_ALIAS="$KEY_ALIAS_SECRET"
             KEY_PASSWORD="$KEY_PASSWORD_SECRET"
