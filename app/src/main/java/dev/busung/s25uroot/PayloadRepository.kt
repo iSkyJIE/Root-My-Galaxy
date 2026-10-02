@@ -203,13 +203,18 @@ data class LoadedGenericDaemons(
 class PayloadRepository(private val context: Context) {
     fun loadCatalog(): LoadedCatalog {
         val sources = AppPreferences.payloadSources(context).enabledSources()
-        require(sources.isNotEmpty()) { context.getString(R.string.repo_no_source_enabled) }
+        val bundled = bundledTargets()
 
-        val targets = mutableListOf<TargetProfile>()
+        // The Fold 7 payload shipped by this fork is part of the APK itself. It must stay usable
+        // with no network and even when every configured source is disabled or unreachable.
+        val targets = mutableListOf<TargetProfile>().apply { addAll(bundled) }
         val failures = mutableListOf<String>()
         sources.forEach { source ->
             try {
-                targets += loadSource(source)
+                val loaded = loadSource(source)
+                targets += loaded.filterNot { remote ->
+                    bundled.any { local -> local.profileId == remote.profileId }
+                }
             } catch (error: Throwable) {
                 val detail = context.getString(
                     R.string.repo_source_failed,
@@ -226,7 +231,7 @@ class PayloadRepository(private val context: Context) {
         AppLog.info(
             AppLogTags.CATALOG,
             "Catalog loaded from ${sources.size - failures.size}/${sources.size} enabled sources, " +
-                "${targets.size} targets",
+                "${targets.size} targets (${bundled.size} bundled)",
         )
 
         require(targets.isNotEmpty()) {
@@ -234,6 +239,32 @@ class PayloadRepository(private val context: Context) {
         }
         return LoadedCatalog(targets, failures)
     }
+
+    /**
+     * Payloads intentionally carried inside this APK.
+     *
+     * This is the original offline payload from this fork. Keeping it as a normal [TargetProfile]
+     * means device matching, verification and the run flow are identical to downloaded payloads;
+     * only the bytes come from assets instead of the network.
+     */
+    fun bundledTargets(): List<TargetProfile> = listOf(
+        TargetProfile(
+            profileId = "q7q-F966USQU9BZDN",
+            displayName = "Galaxy Z Fold 7 | Kernel 6.6.98",
+            models = setOf("SM-F966U", "SM-F966U1"),
+            kernelVersions = setOf("6.6.98"),
+            exploit = RemoteArtifact(
+                url = "$ASSET_PREFIX$BUNDLED_PAYLOAD_PATH/cve-2026-43499-app.so",
+                size = 126_352,
+                sha256 = "92f1959c4944fae2825f094715b9f89e4b06b5ae141b1f6a3f4cb59f1ab84904",
+            ),
+            kernelSu = RemoteArtifact(
+                url = "$ASSET_PREFIX$BUNDLED_PAYLOAD_PATH/ksud-s25u-kdp",
+                size = 6_407_096,
+                sha256 = "fa3edcc7d168637394877b30cb1f909d762dda788ec14051f4ae79edd6562d63",
+            ),
+        ),
+    )
 
     fun loadTargets(): List<TargetProfile> = loadCatalog().targets
 
@@ -501,17 +532,21 @@ class PayloadRepository(private val context: Context) {
         val checked = artifact.checksSize
         onProgress(context.getString(R.string.repo_downloading, label))
         val temporary = File(destination.parentFile, "${destination.name}.part")
-        val connection = open(artifact.url)
-        require(!checked || connection.contentLengthLong == -1L || connection.contentLengthLong == artifact.size) {
-            context.getString(R.string.repo_size_mismatch, label)
+        val assetPath = artifact.url.takeIf { it.startsWith(ASSET_PREFIX) }?.removePrefix(ASSET_PREFIX)
+        val connection = if (assetPath == null) open(artifact.url) else null
+        if (connection != null) {
+            require(!checked || connection.contentLengthLong == -1L || connection.contentLengthLong == artifact.size) {
+                context.getString(R.string.repo_size_mismatch, label)
+            }
         }
         val digest = MessageDigest.getInstance("SHA-256")
         var total = 0L
-        connection.inputStream.use { input ->
+        val input = if (assetPath != null) context.assets.open(assetPath) else requireNotNull(connection).inputStream
+        input.use {
             FileOutputStream(temporary).use { output ->
                 val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                 while (true) {
-                    val count = input.read(buffer)
+                    val count = it.read(buffer)
                     if (count < 0) break
                     total += count
                     require(!checked || total <= artifact.size) {
@@ -523,7 +558,7 @@ class PayloadRepository(private val context: Context) {
                 output.fd.sync()
             }
         }
-        connection.disconnect()
+        connection?.disconnect()
         require(!checked || total == artifact.size) {
             context.getString(R.string.repo_incomplete, label)
         }
@@ -714,6 +749,8 @@ class PayloadRepository(private val context: Context) {
         // A revision list is ~4 KB per commit, so this bounds memory with room to spare; the tags
         // answer is smaller still. Neither can grow with the commit the way a commit object did.
         private const val MAX_LIST_RESPONSE_BYTES = 1024 * 1024
+        private const val ASSET_PREFIX = "asset://"
+        private const val BUNDLED_PAYLOAD_PATH = "payloads/q7q-F966USQU9BZDN"
         private const val MAX_MANIFEST_BYTES = 256 * 1024
     }
 }
