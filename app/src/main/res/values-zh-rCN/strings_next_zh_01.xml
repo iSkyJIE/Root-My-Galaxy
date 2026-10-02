@@ -48,7 +48,7 @@
     <string name="residue_delete_title">删除 %1$s？</string>
     <string name="residue_delete_mine">此文件由本应用创建</string>
     <string name="residue_delete_other">此文件不是由本应用创建</string>
-    <string name="residue_delete_shared">两个 Root My Galaxy 应用都使用这个文件名。删除它可能会导致另一个应用出现问题。</string>
+    <string name="residue_delete_shared">两个 Root Galaxy XP 应用都使用这个文件名。删除它可能会导致另一个应用出现问题。</string>
     <string name="residue_delete_done">已删除 %1$s。</string>
     <string name="residue_delete_left">%1$s 仍然存在。</string>
     <string name="residue_delete_refused">Shell 拒绝删除 %1$s：%2$s</string>
