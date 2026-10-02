@@ -9,7 +9,7 @@
         <item quantity="other">%1$d 次运行</item>
     </plurals>
     <plurals name="history_deleted">
-        <item quantity="one">已删除 %1$d 次运行</item>
+        <item quantity="one">已删除运行记录</item>
         <item quantity="other">已删除 %1$d 次运行</item>
     </plurals>
 </resources>
