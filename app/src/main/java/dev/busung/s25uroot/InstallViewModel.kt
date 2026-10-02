@@ -1232,11 +1232,10 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 // own numbers unless the user opted to override them, with the fresh-session rule on
                 // top. The run-plan screen calls the same function with the same stored settings, so
                 // what this run enforces is what that screen said it would.
-                val routePolicy = ExploitOverride.resolve(
-                    policy = profile.routePolicy,
-                    override = AppPreferences.exploitOverride(app),
-                    freshSession = profile.requiresFreshP0Session,
-                )
+                // One policy for every profile, which is what the official app runs every profile with: a
+                // feed entry's own policy and fresh-session flag are no longer read (see [TargetProfile]),
+                // and the exploit override is no longer applied (see [ExploitOverride.resolve]).
+                val routePolicy = ExploitOverride.resolve(ExploitRoutePolicy.LEGACY)
                 // Said before anything is attempted, because the flavour is a property of the entry
                 // that was chosen and not of the app's setting: a catalog that carries only the other
                 // project's payloads serves that one, and the log is where that becomes visible.
@@ -1337,14 +1336,11 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 // Resolved here rather than read where each ceiling is enforced, so the whole run is
                 // held to one reading - and stated in the log, because a run cut off by a ceiling the
                 // user set should say so in the place a user looks for the reason.
-                activeCeilings = runCeilings(app, profile.requiresFreshP0Session)
+                // No fresh-session rule any more, so the ceilings are the ones the settings name.
+                activeCeilings = runCeilings(app, freshSession = false)
                 appendLog(
                     app.getString(
-                        if (profile.requiresFreshP0Session) {
-                            R.string.log_run_ceilings_fresh
-                        } else {
-                            R.string.log_run_ceilings
-                        },
+                        R.string.log_run_ceilings,
                         RunLimits.durationLabel(activeCeilings.totalMillis),
                         RunLimits.durationLabel(activeCeilings.stallMillis),
                         RunLimits.durationLabel(activeCeilings.helperMillis),
@@ -1421,7 +1417,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 appendLog(app.getString(R.string.log_payload_origin, payloads.origin.name.lowercase()))
                 executeExploit(
                     payloads,
-                    profile.requiresFreshP0Session,
+                    requiresFreshP0Session = false,
                     routePolicy.policy,
                 )
 
@@ -1807,9 +1803,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 helper.absolutePath,
                 logFile.absolutePath,
             ).redirectErrorStream(true)
-            processBuilder.environment().putAll(
-                exploitEnvironment(requiresFreshP0Session, cachedP0Offset, routePolicy),
-            )
+            processBuilder.environment().putAll(exploitEnvironment(cachedP0Offset))
             processBuilder.start()
         }
         val captured = StringBuilder()
@@ -2179,7 +2173,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
     ): String = buildString {
         // The environment comes first, quoted as values, because this is a shell command rather than
         // a process spawn with an environment attached.
-        exploitEnvironment(requiresFreshP0Session, cachedP0Offset, routePolicy).forEach { (name, value) ->
+        exploitEnvironment(cachedP0Offset).forEach { (name, value) ->
             append(name).append('=').append(shellQuote(value)).append(' ')
         }
         append(shellQuote(ADB_HELPER_PATH))
@@ -2226,7 +2220,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
         cachedP0Offset: String?,
         routePolicy: ExploitRoutePolicy,
     ): Array<String> = buildList {
-        exploitEnvironment(requiresFreshP0Session, cachedP0Offset, routePolicy).forEach { (name, value) ->
+        exploitEnvironment(cachedP0Offset).forEach { (name, value) ->
             add("$name=$value")
         }
         add("CVE43499_ROOT_HELPER=$helperPath")
@@ -2787,6 +2781,24 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
         private const val ADB_LOG_PATH = "/data/local/tmp/rmgnext-exploit.log"
 
         /**
+         * The exploit's environment, spelled once, and identical to the official app's.
+         *
+         * Four values: how many attempts, how long one may take, how long its P0 stage may take, and the
+         * slide offset this boot already won. Everything else this app used to add - a slide route, a p0
+         * window base, a single attempt for a profile that asked for a fresh session - was a value the
+         * payload had never been validated with, and a wrong one is a run that dies instead of rooting.
+         * The official app sends these three numbers and no others, which is why they are spelled here
+         * rather than assembled from a feed entry or a setting.
+         */
+        private const val ATTEMPTS_ENV = "EXPLOIT_ATTEMPTS"
+        private const val P0_TIMEOUT_ENV = "P0_ATTEMPT_TIMEOUT_SEC"
+        private const val ATTEMPT_TIMEOUT_ENV = "EXPLOIT_ATTEMPT_TIMEOUT_SEC"
+        private const val EXPLOIT_ATTEMPTS = "24"
+        private const val P0_ATTEMPT_TIMEOUT_SEC = "45"
+        private const val EXPLOIT_ATTEMPT_TIMEOUT_SEC = "120"
+        internal const val P0_OFFSET_ENV = "SLIDE_P0_OFFSET"
+
+        /**
          * Where the KernelSU daemon goes, whichever transport put it there.
          *
          * One path and not one per transport: the name is the payload's, not the app's - its helper
@@ -2868,7 +2880,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
          * paths are part of it.
          */
         internal fun exploitPlan(
-            requiresFreshP0Session: Boolean,
+            @Suppress("UNUSED_PARAMETER") requiresFreshP0Session: Boolean,
             cachedP0Offset: String?,
             shizuku: Boolean,
             // Required, with no default: a default here would have to guess whether the run is a fresh
@@ -2882,7 +2894,9 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             // will not apply - and so a value chosen in the settings shows up in both.
             bootSettleSeconds = BootSettle.normalize(bootSettleSeconds),
             routePolicy = routePolicy,
-            environment = exploitEnvironment(requiresFreshP0Session, cachedP0Offset, routePolicy.policy),
+            // The environment no longer comes from the policy: see [exploitEnvironment]. The policy is still
+            // carried by the plan for its description of the run, which the run-plan screen shows.
+            environment = exploitEnvironment(cachedP0Offset),
             shizukuArguments = if (shizuku) {
                 mapOf(
                     "CVE43499_ROOT_HELPER" to SHIZUKU_HELPER_PATH,
@@ -2896,50 +2910,23 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             helperLimitMillis = ceilings.helperMillis,
         )
 
-        internal fun exploitEnvironment(
-            requiresFreshP0Session: Boolean,
-            cachedP0Offset: String?,
-            routePolicy: ExploitRoutePolicy = ExploitRoutePolicy.LEGACY,
-        ): Map<String, String> = buildMap {
-            // A fresh-session profile hands its pacing to the payload, so the policy's attempt and
-            // timeout budget does not apply to it. The route still does: which way the payload finds
-            // the slide is a different question from how many tries it gets.
-            put(
-                "EXPLOIT_ATTEMPTS",
-                if (requiresFreshP0Session) "1" else routePolicy.attempts.toString(),
-            )
-            if (!requiresFreshP0Session) {
-                put("P0_ATTEMPT_TIMEOUT_SEC", routePolicy.p0AttemptTimeoutSec.toString())
-                put("EXPLOIT_ATTEMPT_TIMEOUT_SEC", routePolicy.attemptTimeoutSec.toString())
-                if (routePolicy.p0OffsetCache) {
-                    cachedP0Offset?.let { put(ExploitRoutePolicy.P0_OFFSET_ENV, it) }
-                }
-            }
-            routePolicy.slideRoute.env?.let { put(ExploitRoutePolicy.SLIDE_SOURCE_ENV, it) }
-            // The p0 window's base, when the policy names one - which today means a user moved it in Run
-            // limits, since the feed carries no such field. This one is unlike the three above in a way
-            // worth stating: leaving it out is not "the payload decides", it is the payload forking every
-            // attempt with the supervisor's own base (20000 us), which is what every shipped target has
-            // ever run with and no profile can change.
-            routePolicy.p0WindowDelayUsec?.let {
-                put(ExploitRoutePolicy.P0_WINDOW_DELAY_ENV, it.toString())
-            }
-            // The offset this boot already won, when the feed's policy allows the hand-over. The
-            // payload treats a supplied offset as final and returns before it prepares the p0 pipe
-            // oracle, which is the entire p0 lottery skipped - the stage that has to be won attempt
-            // after attempt otherwise, and the reason the original app roots in minutes on a device
-            // this app cannot get past that stage on. It is bounded to this boot twice over: the cache
-            // is keyed by the boot token, and a fresh-session profile never reaches this line.
-            //
-            // The hand-over was removed on 2026-09-23 after nine runs handed 0x0f0000/0x180000 died at
-            // `phys step cache gate failed`, which was read as the supplied offset breaking the stage
-            // after it. The offset is not what that gate turns on. On 2026-09-25 the artifact the
-            // original app runs died there on its own scan attempt, with no offset handed to it, and
-            // then rooted on the attempt after that - handed the offset its own scan had just won,
-            // which is this hand-over. What the gate reads is a page, and a missed write window leaves
-            // that read coming back as `dead000000000100`; no cache choice fixes it, since this device
-            // has no `kmalloc-cg-*` cache at all and the artifact that reads the shared row matches the
-            // pipe page's own cache. Winning one lottery per boot is what this app does not want.
+        /**
+         * What the payload is handed, which is now exactly what the official app hands it.
+         *
+         * Four values and nothing else: how many attempts, how long one may take, how long its P0 stage may
+         * take, and the slide offset this boot already won. The rest of this map used to be assembled from a
+         * per-profile policy and a user override - a slide route, a p0 window base, an attempt budget of one
+         * for profiles that asked for a fresh session - and every one of those was a value the payload had
+         * never been validated with, arriving on the one path where being wrong is a run that dies instead of
+         * rooting. The official app has none of them, so neither does this: what it sends is [EXPLOIT_ATTEMPTS],
+         * [P0_ATTEMPT_TIMEOUT_SEC] and [EXPLOIT_ATTEMPT_TIMEOUT_SEC], plus [P0_OFFSET_ENV] when a cached
+         * offset exists for this boot.
+         */
+        internal fun exploitEnvironment(cachedP0Offset: String?): Map<String, String> = buildMap {
+            put(ATTEMPTS_ENV, EXPLOIT_ATTEMPTS)
+            put(P0_TIMEOUT_ENV, P0_ATTEMPT_TIMEOUT_SEC)
+            put(ATTEMPT_TIMEOUT_ENV, EXPLOIT_ATTEMPT_TIMEOUT_SEC)
+            cachedP0Offset?.let { put(P0_OFFSET_ENV, it) }
         }
 
         private fun stripAnsi(value: String): String = ANSI_ESCAPE.replace(value, "").replace("\r", "")

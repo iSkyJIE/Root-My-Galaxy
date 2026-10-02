@@ -121,12 +121,18 @@ class TargetProfileTest {
     }
 
     @Test
-    fun freshP0SessionRunsOnceWithoutCacheOrShortTimeoutOverrides() {
-        val freshProfile = profile.copy(requiresFreshP0Session = true)
-
+    fun everyProfileRunsWithTheOfficialAppsNumbers() {
+        // A profile's own policy fields are no longer read - see [TargetProfile] - so the environment is the
+        // one the official app hands over, whether the feed called a target fresh-session or not. The cached
+        // offset is the only value that varies.
         assertEquals(
-            mapOf("EXPLOIT_ATTEMPTS" to "1"),
-            InstallViewModel.exploitEnvironment(freshProfile.requiresFreshP0Session, "0x1a0000"),
+            mapOf(
+                "EXPLOIT_ATTEMPTS" to "24",
+                "P0_ATTEMPT_TIMEOUT_SEC" to "45",
+                "EXPLOIT_ATTEMPT_TIMEOUT_SEC" to "120",
+                "SLIDE_P0_OFFSET" to "0x1a0000",
+            ),
+            InstallViewModel.exploitEnvironment(cachedP0Offset = "0x1a0000"),
         )
     }
 

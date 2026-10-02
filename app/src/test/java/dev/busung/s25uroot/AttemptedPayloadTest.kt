@@ -36,8 +36,6 @@ private fun attempt(
     displayName = "Galaxy S25 kernel 6.6.98 (KernelSU-Next)",
     models = listOf("SM-S938U1"),
     kernelVersions = kernelVersions,
-    requiresFreshP0Session = false,
-    routePolicy = ExploitRoutePolicy.LEGACY,
     exploit = RemoteArtifact(
         url = "https://example.invalid/exploit.so",
         size = 64,

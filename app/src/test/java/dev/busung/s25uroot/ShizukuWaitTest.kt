@@ -159,72 +159,30 @@ class ShizukuWaitTest {
     // --- which of the device's two payloads answers that question ------------------------------------
 
     @Test
-    fun `the payload the run will resolve is the one whose policy counts`() {
-        // A retry runs the attempt, a root-on-boot run runs the cache, and the two can disagree: reading
-        // the wrong one would hold a boot back over a payload that is not the one it was about to run.
-        val shellOnly = payload(shellRequired = true)
-        val selfCarrying = payload(shellRequired = false)
-
-        assertTrue(bootPayloadNeedsShell(true, attempted = shellOnly, cached = selfCarrying))
-        assertFalse(bootPayloadNeedsShell(true, attempted = selfCarrying, cached = shellOnly))
-        assertTrue(bootPayloadNeedsShell(false, attempted = selfCarrying, cached = shellOnly))
-        assertFalse(bootPayloadNeedsShell(false, attempted = shellOnly, cached = selfCarrying))
+    fun `a payload that is there needs no shell of its own`() {
+        // The feed's own field for this went with the rest of its policy: the official app has no such field,
+        // so nothing here asks for a shell a profile wanted. Which of the two descriptors answers is still
+        // the caller's rule, and this is it.
+        assertFalse(bootPayloadNeedsShell(preferAttempted = true, attempted = payload(), cached = null))
+        assertFalse(bootPayloadNeedsShell(preferAttempted = false, attempted = null, cached = payload()))
     }
 
     @Test
-    fun `an attempt record is not read for a boot that is not repeating one`() {
-        // Only one of the two can be the payload being run, so a shell-only attempt sitting on the device
-        // must not make a root-on-boot run wait for Shizuku it does not need - and the other way round.
-        assertFalse(
-            bootPayloadNeedsShell(
-                preferAttempted = false,
-                attempted = payload(shellRequired = true),
-                cached = payload(shellRequired = false),
-            ),
-        )
-        assertFalse(
-            bootPayloadNeedsShell(
-                preferAttempted = true,
-                attempted = payload(shellRequired = false),
-                cached = payload(shellRequired = true),
-            ),
-        )
-    }
-
-    @Test
-    fun `a device that cannot say what its payload is keeps the wait`() {
-        // The conservative default, and what keeps this change from reaching a boot nobody can describe:
-        // no cache and no attempt means the old behaviour, which is to wait and then say what happened.
+    fun `a device with no payload at all keeps the wait`() {
+        // The conservative default, and what keeps this from reaching a boot nobody can describe: no cache
+        // and no attempt means the old behaviour, which is to wait and then say what happened.
         assertTrue(bootPayloadNeedsShell(preferAttempted = true, attempted = null, cached = null))
         assertTrue(bootPayloadNeedsShell(preferAttempted = false, attempted = null, cached = null))
     }
-
-    @Test
-    fun `a payload that leaves the transport to the settings does not need a shell`() {
-        // Which is every target that does not declare it, so this is the common case and not an edge one:
-        // a policy that says nothing means "whatever transport the settings produce", and the run's own
-        // rule already reads it that way - a boot that waited, and then refused, was the one place that
-        // did not.
-        assertFalse(ExploitRoutePolicy.LEGACY.prefersShellTransport)
-        assertFalse(
-            bootPayloadNeedsShell(
-                preferAttempted = false,
-                attempted = null,
-                cached = payload(shellRequired = ExploitRoutePolicy.LEGACY.prefersShellTransport),
-            ),
-        )
-    }
 }
 
-/** A cached descriptor that differs from its siblings only in the policy this file asks about. */
-private fun payload(shellRequired: Boolean) = CachedPayload(
+/** A cached descriptor, with nothing in it that a policy could have chosen. */
+private fun payload() = CachedPayload(
     id = knownGoodId("a".repeat(64), "b".repeat(64), "c".repeat(64)),
     profileId = "pa3q-kernelsu-next-6.6.98",
     displayName = "Galaxy S25 kernel 6.6.98 (KernelSU-Next)",
     models = listOf("SM-S938U1"),
     kernelVersions = listOf("6.6.98"),
-    requiresFreshP0Session = false,
-    routePolicy = ExploitRoutePolicy(prefersShellTransport = shellRequired),
     exploit = RemoteArtifact(url = "https://example.invalid/exploit.so", size = 64, verifySize = true),
     kernelSu = RemoteArtifact(url = "https://example.invalid/ksud", size = 48, verifySize = true),
     helperSha256 = "d".repeat(64),
