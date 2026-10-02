@@ -22,6 +22,16 @@ const val ROOT_MY_GALAXY_URL = "https://github.com/iSkyJIE/Root-My-Galaxy"
 
 object AppUpdater {
 
+    // This fork's own repository, and the two things here that have to be right.
+    //
+    // It is this fork's rather than the one it came from, because the update check downloads whatever
+    // APK the API answers with and the other install is signed with a key this app does not hold - an
+    // update offered from there could never be installed.
+    //
+    // And it is the repository's current name rather than a redirect to it. GitHub answers a renamed
+    // repository with a redirect that still works today, which is exactly why the name matters: this URL
+    // decides which APK the app downloads and prompts someone to install, and a name nobody is holding is
+    // a name somebody else can. The full name is what the GitHub API reports for the repository's id.
     private const val GITHUB_API = "https://api.github.com/repos/iSkyJIE/Root-My-Galaxy"
     private const val RELEASES_PAGE = "$ROOT_MY_GALAXY_URL/releases/latest"
 
@@ -63,23 +73,45 @@ object AppUpdater {
         }
     }
 
+    /**
+     * Whether [latestVersion], a release tag, is newer than the installed build.
+     *
+     * Builds carry a `+ci.<run>.<sha>` or `+local.<sha>` suffix so two installs of the same version
+     * can be told apart, which means a plain string comparison would report the release already
+     * installed as an update and offer it forever. The comparison is therefore on the dotted version
+     * numbers, and it also gets `0.2.10` versus `0.2.9` right, which string order does not.
+     */
     fun isUpdateAvailable(latestVersion: String, currentVersion: String): Boolean {
-        val latest = numericVersion(latestVersion)
-        val current = numericVersion(currentVersion)
-        if (latest.isEmpty() || current.isEmpty()) {
-            return latestVersion.isNotEmpty() && latestVersion != currentVersion
-        }
-        val length = maxOf(latest.size, current.size)
-        for (index in 0 until length) {
-            val left = latest.getOrElse(index) { 0 }
-            val right = current.getOrElse(index) { 0 }
-            if (left != right) return left > right
-        }
-        return false
+        if (latestVersion.isEmpty()) return false
+        val latest = versionBase(latestVersion)
+        val current = versionBase(currentVersion)
+        // A tag that is not a dotted version at all cannot be ordered; fall back to "different".
+        if (latest == null || current == null) return latestVersion != currentVersion
+        return compareVersions(latest, current) > 0
     }
 
-    private fun numericVersion(version: String): List<Int> =
-        version.substringBefore('-').split('.').mapNotNull { it.toIntOrNull() }
+    /** `v0.2.65+ci.42.ab12cd3` becomes `0.2.65`; null when there is no dotted number in it. */
+    internal fun versionBase(version: String): String? {
+        val stripped = version.trim()
+            .removePrefix("v")
+            .substringBefore('+')
+            .substringBefore('-')
+        return stripped.takeIf { candidate ->
+            candidate.isNotEmpty() && candidate.all { it.isDigit() || it == '.' }
+        }
+    }
+
+    /** Component-wise, so a missing part counts as zero and `0.3` beats `0.2.9`. */
+    internal fun compareVersions(latest: String, current: String): Int {
+        val latestParts = latest.split('.').map { it.toIntOrNull() ?: 0 }
+        val currentParts = current.split('.').map { it.toIntOrNull() ?: 0 }
+        for (index in 0 until maxOf(latestParts.size, currentParts.size)) {
+            val difference =
+                (latestParts.getOrNull(index) ?: 0) - (currentParts.getOrNull(index) ?: 0)
+            if (difference != 0) return difference
+        }
+        return 0
+    }
 
     suspend fun downloadApk(
         context: Context,

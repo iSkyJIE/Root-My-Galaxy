@@ -6,3 +6,14 @@ local.properties
 **/build/
 captures/
 *.iml
+
+# Release signing material: never commit.
+keystore/
+*.jks
+*.keystore
+
+# A build product, and it lands *inside* the source directory: the DFRoot port's
+# CMake step compiles `splicehelper.c` and writes the binary beside it, because the
+# shellcode embeds it with `.incbin "splicehelper"` and the assembler resolves that
+# relative to the sources. Committing it would mean every build dirties the tree.
+app/src/main/cpp/dfroot/splicehelper

@@ -1,0 +1,171 @@
+package dev.busung.s25uroot
+
+/**
+ * One row of the payload sheet.
+ *
+ * The sheet used to hold one kind of row a payload a source published for a device and the universal root
+ * lived beside it as a card on the home screen that asked two questions and then ran. The card read as a third
+ * thing to learn next to the install card, and one of its two questions ("universal root") made a claim about
+ * the phone that is not true: this chain needs a payload like any other, it just does not need a *helper*. So
+ * it is a row here instead the same list, the same controls, the same Next and both of the questions the
+ * card asked are answered by the row itself: one row per KernelSU per [PayloadTier], which is six.
+ *
+ * ## Why the universal rows are never narrowed by the device toggle
+ *
+ * [PayloadChoice.Device] rows are what the sources publish, so everything the sheet narrows by applies to them:
+ * the device toggle, the flavour lens and the text. The universal rows belong to no device and are published
+ * by no source, so the device toggle has nothing to say about them and it is on by default, so a filter that
+ * hid them would hide them on the default state of the sheet. That would be the exact inversion of what this
+ * path is for: it is the one flow that works on a phone no source has an entry for. The flavour lens does
+ * apply, because a row that loads KernelSU-Next is a KernelSU-Next row and the chips are a lens on what a
+ * candidate stages.
+ *
+ * ## What the row says, where the card had a dialog
+ *
+ * The card asked for the tier behind a second dialog whose answers were live resolutions a network read of
+ * the catalog and of the generic feed so that a tier which cannot serve this phone could say so before the
+ * run. The list keeps that rule and moves where the answer comes from:
+ *
+ * - the **device** tier's entry is resolved here, from the catalog the sheet already holds, by the same
+ *   [resolveFor] call the run makes so the row names what it would stage, or says that the enabled sources
+ *   have no entry for this phone. Resolving does not fetch anything, which is what makes it safe to do on a
+ *   list.
+ * - the **generic** tier's coverage is not in this app's hands at this point: it comes from a feed the sheet
+ *   does not read, and reading it here would be a network call per row. Its row describes the tier instead,
+ *   and a run on a kernel the daemon has no module for refuses with the feed's own sentence after the tap,
+ *   before a byte is downloaded, which is the trade the row makes rather than a promise it cannot keep.
+ */
+internal sealed interface PayloadChoice {
+
+    /**
+     * Identity for the sheet's selection and for the list's keys.
+     *
+     * Both kinds are drawn from one list, so the two have to be in one namespace or a selection could name two
+     * rows at once. A device row is keyed by the profile's own [TargetProfile.selectionId], which is what the
+     * run is started by; a universal row is keyed by [universalChoiceKey], which is in a shape no profile id
+     * has and a test holds the composed list's keys distinct rather than trusting the two shapes, because a
+     * duplicate here is a list where tapping one row selects another.
+     */
+    val key: String
+
+    /** Which KernelSU this row would load, which is what the flavour lens reads. */
+    val flavor: KernelSuFlavor
+
+    /** Whether this row is what someone typed. */
+    fun matchesQuery(query: String): Boolean
+
+    /** One entry a source published, for one device the sheet's original and still its usual row. */
+    data class Device(val profile: TargetProfile) : PayloadChoice {
+        override val key: String get() = profile.selectionId
+        override val flavor: KernelSuFlavor get() = profile.flavor
+        override fun matchesQuery(query: String): Boolean = profile.matchesQuery(query)
+    }
+
+    /**
+     * The DirtyFrag chain with one flavour's daemon, in one of the two tiers.
+     *
+     * Both of the card's questions, as one value: [flavor] is which KernelSU this row loads and [tier] is which
+     * build of it. Nothing here says which device it is for, because the answer is none that is the row.
+     */
+    data class Universal(
+        override val flavor: KernelSuFlavor,
+        val tier: PayloadTier,
+    ) : PayloadChoice {
+        override val key: String get() = universalChoiceKey(flavor, tier)
+
+        /**
+         * What someone arriving at this row types.
+         *
+         * The row's own words first the flavour and the tier, which is what is on it and then the three
+         * things this path is known by rather than named: what it is, the exploit's name, and the CVE. All
+         * three are real names for it in this project's own files, and someone who read about the bug will
+         * have the number, not "universal root".
+         */
+        override fun matchesQuery(query: String): Boolean {
+            val needle = query.trim()
+            if (needle.isEmpty()) return true
+            return listOf(
+                flavor.id,
+                flavor.label,
+                tier.name,
+                "${tier.name} payload",
+                "universal",
+                UniversalRootRun.EXPLOIT_NAME,
+                UniversalRootRun.CVE,
+            ).any { it.contains(needle, ignoreCase = true) }
+        }
+    }
+}
+
+/**
+ * The id a universal row is keyed by, in a shape no [TargetProfile.selectionId] has.
+ *
+ * Profile ids are `profileId` or `source|profileId`, so the colon and the prefix both keep this out of their
+ * way deliberately, since the two kinds share one selection: a key that could be read as a source-qualified
+ * profile id is one that could be handed to something that resolves profiles.
+ */
+internal fun universalChoiceKey(flavor: KernelSuFlavor, tier: PayloadTier): String =
+    "universal:$UNIVERSAL_KEY_MARK:${flavor.id}:${tier.name}"
+
+private const val UNIVERSAL_KEY_MARK = "dirtyfrag"
+
+/**
+ * Every universal row the sheet can show: one per KernelSU per tier.
+ *
+ * Flavour-major, and in the order the flavour chips are drawn, so the rows under a chip arrive together rather
+ * than interleaved by tier. The tiers are in their declared order, device first the stronger pairing first,
+ * which is also the order the card's dialog offered them in.
+ */
+internal val allUniversalChoices: List<PayloadChoice.Universal> =
+    KernelSuFlavor.entries.flatMap { flavor ->
+        PayloadTier.entries.map { tier -> PayloadChoice.Universal(flavor, tier) }
+    }
+
+/**
+ * The universal rows to show, narrowed by the two controls that apply to them.
+ *
+ * No device parameter, and that is the whole of the "always shown" rule: the toggle narrows what the sources
+ * publish, and this is not published by a source. Threading the toggle in here would be the change that made
+ * the sheet hide this path on a phone with no entry of its own which is `PayloadChoiceTest`'s first case.
+ */
+internal fun visibleUniversalChoices(
+    flavor: KernelSuFlavor?,
+    query: String,
+): List<PayloadChoice.Universal> = allUniversalChoices.filter { choice ->
+    (flavor == null || choice.flavor == flavor) && choice.matchesQuery(query)
+}
+
+/**
+ * The sheet's two groups, in the order it draws them. Device payloads first, because they are what the sheet
+ * was for; the universal rows join them below, where they are a short scroll away rather than six rows in front
+ * of every payload somebody came for.
+ */
+internal data class PayloadRows(
+    val universal: List<PayloadChoice.Universal>,
+    val device: List<PayloadChoice.Device>,
+) {
+    /** Whether the sheet has nothing to offer at all, which is the case its empty state explains. */
+    val isEmpty: Boolean get() = universal.isEmpty() && device.isEmpty()
+
+    /** Everything listed, in the order drawn - which is what [payloadRows] composes and the sheet walks. */
+    val all: List<PayloadChoice> get() = device + universal
+}
+
+/**
+ * What the payload sheet lists, given its controls.
+ *
+ * The one place the two groups are composed, so the rule about which controls reach which kind is a line of
+ * code rather than a claim about the screen: [fitsDeviceOnly] is handed to [visibleTargets] and not to
+ * [visibleUniversalChoices], and the tests ask this function with the toggle on.
+ */
+internal fun payloadRows(
+    profiles: List<TargetProfile>,
+    device: DeviceSnapshot,
+    fitsDeviceOnly: Boolean,
+    query: String,
+    flavor: KernelSuFlavor?,
+): PayloadRows = PayloadRows(
+    universal = visibleUniversalChoices(flavor, query),
+    device = visibleTargets(profiles, device, fitsDeviceOnly, query, flavor)
+        .map(PayloadChoice::Device),
+)
