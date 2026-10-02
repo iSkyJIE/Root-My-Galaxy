@@ -1099,7 +1099,9 @@ private fun RootApp(
         } else {
             targetCatalog.profiles.resolveFor(device)
         }
-        val freshSession = resolved?.requiresFreshP0Session == true
+        // No profile can ask for a fresh session any more: the flag is no longer read from a feed entry, so
+        // every target is run the way the official app runs it - one policy, with its own numbers.
+        val freshSession = false
         val cachedOffset = installViewModel.cachedOffsetForThisBoot()
         RunPlanDisplay(
             deviceLabel = "${device.model} \u00b7 ${device.kernelRelease}",
@@ -1133,11 +1135,7 @@ private fun RootApp(
                 freshSession,
                 cachedOffset,
                 shizukuMode,
-                ExploitOverride.resolve(
-                    policy = resolved?.routePolicy ?: ExploitRoutePolicy.LEGACY,
-                    override = AppPreferences.exploitOverride(context),
-                    freshSession = freshSession,
-                ),
+                ExploitOverride.resolve(ExploitRoutePolicy.LEGACY),
                 AppPreferences.bootSettleSeconds(context),
                 // The same resolution a run performs, from the same stored values: a plan that showed
                 // the defaults while the run enforced the user's choices would be a plan about another
@@ -1527,13 +1525,9 @@ private fun RootApp(
                                     // payload itself and confirm that exact profile.
                                     scope.launch {
                                         val profile = withContext(Dispatchers.IO) {
-                                            runCatching {
-                                                KnownGoodPayloadStore.profileFor(context)
-                                            }.getOrNull()
+                                            runCatching { KnownGoodPayloadStore.profileFor(context) }.getOrNull()
                                         }
                                         if (profile == null) {
-                                            // Let the install screen report the existing "no saved payload"
-                                            // failure instead of silently switching back to Online.
                                             openInstaller(null)
                                         } else {
                                             selectedProfile = profile
@@ -7673,9 +7667,8 @@ private fun CachedPayloadDialog(
                 if (saved == null) {
                     Text(stringResource(R.string.settings_cached_payload_none))
                 } else {
-                    // The name first and the id under it, which together are what the settings row
-                    // used to carry on one line of value - and the id is here in full, in the place
-                    // where a long precise string costs nothing.
+                    // The built-in q7q payload is shown in the same Saved surface as a verified cache:
+                    // Offline mode resolves this exact profile and never has to open the online catalog.
                     RunPlanRow(
                         stringResource(R.string.cached_payload_device),
                         saved.displayName,
@@ -7692,10 +7685,10 @@ private fun CachedPayloadDialog(
                     )
                     Text(
                         stringResource(
-                            if (cached != null) {
-                                R.string.cached_payload_note
-                            } else {
+                            if (bundled != null) {
                                 R.string.cached_payload_bundled_note
+                            } else {
+                                R.string.cached_payload_note
                             },
                         ),
                         style = MaterialTheme.typography.bodySmall,
@@ -7966,17 +7959,19 @@ private fun RunLimitsDialog(
                     selected = limits.helperSeconds,
                     onChanged = onChanged,
                 )
-                // The other half of the answer: the payload's numbers, handed over as its own
-                // variables, and the switch that lets the app's numbers take their place.
+                // The other half of the answer: the payload's numbers, handed over as its own variables.
+                //
+                // The switch that used to sit here - and the four pickers behind it, for the attempt
+                // budget, the attempt timeout, the slide route and the p0 window - is gone. Those are the
+                // payload's numbers and nothing this app may move: the official app hands over three fixed
+                // values and a cached offset, and a value we invent is one the payload was never validated
+                // with, on the one path where being wrong is a run that dies instead of rooting. See
+                // [ExploitEnvironmentTest] for the rule and [ExploitOverride.resolve] for its other half.
                 Text(
                     stringResource(R.string.run_limits_payload_note),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp),
-                )
-                ExploitOverrideGroup(
-                    override = override,
-                    onChanged = onOverrideChanged,
                 )
             }
         },

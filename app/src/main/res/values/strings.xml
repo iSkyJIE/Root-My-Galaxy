@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Root Galaxy XP</string>
+    <string name="app_name">Root My Galaxy XP</string>
     <string name="nav_overview">Home</string>
     <string name="nav_history">History</string>
     <string name="nav_logs">Logs</string>
@@ -75,7 +75,7 @@
     <string name="residue_delete_title">Delete %1$s?</string>
     <string name="residue_delete_mine">This file was created by the app</string>
     <string name="residue_delete_other">This file was not created by the app</string>
-    <string name="residue_delete_shared">Both Root Galaxy XP apps use this file name. Deleting it may break the other one.</string>
+    <string name="residue_delete_shared">Both Root My Galaxy apps use this file name. Deleting it may break the other one.</string>
     <string name="residue_delete_done">Deleted %1$s.</string>
     <string name="residue_delete_left">%1$s left.</string>
     <string name="residue_delete_refused">The shell rejected %1$s: %2$s</string>
@@ -184,7 +184,7 @@
     <string name="cached_payload_exploit_sha">Exploit SHA-256</string>
     <string name="cached_payload_kernelsu_sha">KernelSU SHA-256</string>
     <string name="cached_payload_note">Saved only after a KernelSU install that worked. Each file is checked again before it is used.</string>
-    <string name="cached_payload_bundled_note">Built into Root Galaxy XP and checked before use. It is available for offline runs and cannot be removed from the app.</string>
+    <string name="cached_payload_bundled_note">Built into Root My Galaxy XP and checked before use. It is available for offline runs and cannot be removed from the app.</string>
     <string name="cached_payload_no_digest">Unknown</string>
     <string name="cached_payload_forget">Remove</string>
     <string name="status_loading_cached">Loading saved payload</string>
@@ -237,6 +237,9 @@
     <string name="universal_step_exploit">Kernel exploit</string>
     <string name="universal_step_load">Load KernelSU</string>
     <string name="universal_installed">Rooted : KernelSU is live in this boot.</string>
+    <string name="action_open_manager">Open manager</string>
+    <string name="universal_confirm_in_manager">Open the %1$s manager to see it live - and a soft restart from this screen is what puts KernelSU\'s modules into a Zygote.</string>
+    <string name="universal_installed_unverified">Rooted : the chain\'s steps all landed. Nothing on this phone lets an app see root, so open the KernelSU manager to see it live.</string>
     <string name="universal_no_device">This device could not be read, so nothing was done.</string>
     <string name="universal_wrong_abi">This exploit is arm64 only, and this phone shows %1$s.</string>
     <string name="universal_already_armed">This boot is already hooked. Reboot before running %1$s again : the exploit arms a marker only a reboot clears.</string>
@@ -244,6 +247,7 @@
     <!-- A boot run stages the daemon this phone already has, and that copy is checked first: it can be another
          flavour\'s or another tier\'s since, which is the mix-up the flavour exists to prevent. -->
     <string name="universal_cached_daemon_stale">The daemon staged on this phone is not the one its last run downloaded, so it cannot be staged again. Run the dirtyfrag root once with the network.</string>
+    <string name="universal_steps_landed">The chain\'s steps all landed: both patches verified and the daemon started. Nothing on this phone lets an app see root, so this run is reported as rooted without a verification - open the KernelSU manager to see it live.</string>
     <string name="universal_not_live">Nothing on this phone confirms root: no /system/bin/su, and an app cannot read the kernel. The chain finished, but this boot is not rooted.</string>
     <string name="dfr_dmc_fix">Keep Odin reachable</string>
     <string name="dfr_dmc_fix_detail">Writes Samsung\'s DMC setting on every boot, so download mode stays available on the firmware that locks it behind a lock screen. Needs the helper installed.</string>
@@ -520,8 +524,8 @@
     <string name="guide_kernel_answer_meaning">The app says whether any payload could ever work on this phone.</string>
     <string name="kernel_check_needs_restart">Reboot the phone to clear it.</string>
     <string name="kernel_check_failed">The test could not run on this phone.</string>
-    <string name="about_title">About Root Galaxy XP</string>
-    <string name="about_description">Information about Root Galaxy XP</string>
+    <string name="about_title">About Root My Galaxy Next</string>
+    <string name="about_description">Information about Root My Galaxy Next</string>
     <string name="about_body">Root supported Samsung Galaxy phones using a kernel exploit.</string>
 
     <string name="install_title">Install</string>
@@ -731,7 +735,7 @@
     <string name="repo_response_too_large">The server response was too large</string>
     <string name="repo_api_limited">GitHub rate limit reached; try again in a few minutes</string>
     <string name="open_github">Open GitHub</string>
-    <string name="github_card_title">Explore Root Galaxy XP</string>
+    <string name="github_card_title">Explore Root My Galaxy Next</string>
     <string name="github_card_description">View the source code and usage instructions.</string>
     <string name="action_continue">Continue anyway</string>
     <string name="action_next">Next</string>
@@ -1028,7 +1032,7 @@
     <string name="reboot_confirm_body">The phone will Reboot into %1$s and will not return to this screen on its own.
 
 Hold Power and Volume Down together for 7 seconds to Reboot it from there.</string>
-    <string name="recovery_shell_unavailable">KernelSU is running, but this app has no root access. Give Root Galaxy XP root permission in KernelSU, or start Shizuku, then try again.</string>
+    <string name="recovery_shell_unavailable">KernelSU is running, but this app has no root access. Give Root My Galaxy Next root permission in KernelSU, or start Shizuku, then try again.</string>
     <string name="recovery_shizuku_needs_root">Shizuku is running, but this action needs root, and Shizuku does not have it. Load KernelSU first, or run the install again.</string>
     <string name="recovery_scheduled">Scheduled. Android will reboot shortly.</string>
     <string name="recovery_reboot_scheduled">Scheduled. The phone will reboot without root.</string>

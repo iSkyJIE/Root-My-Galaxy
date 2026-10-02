@@ -40,7 +40,7 @@ object AppUpdater {
             val connection = URL("$GITHUB_API/releases/latest").openConnection() as HttpURLConnection
             try {
                 connection.requestMethod = "GET"
-                connection.setRequestProperty("User-Agent", "RootGalaxyXP/${BuildConfig.VERSION_NAME}")
+                connection.setRequestProperty("User-Agent", "RootMyGalaxyXP/${BuildConfig.VERSION_NAME}")
                 connection.setRequestProperty("Accept", "application/vnd.github+json")
                 connection.connectTimeout = 10_000
                 connection.readTimeout = 10_000
@@ -124,7 +124,7 @@ object AppUpdater {
             val connection = URL(url).openConnection() as HttpURLConnection
             try {
                 connection.requestMethod = "GET"
-                connection.setRequestProperty("User-Agent", "RootGalaxyXP/${BuildConfig.VERSION_NAME}")
+                connection.setRequestProperty("User-Agent", "RootMyGalaxyXP/${BuildConfig.VERSION_NAME}")
                 connection.connectTimeout = 15_000
                 connection.readTimeout = 30_000
                 if (connection.responseCode != HttpURLConnection.HTTP_OK) return@withContext null

@@ -54,8 +54,8 @@ internal data class CachedPayload(
     val displayName: String,
     val models: List<String>,
     val kernelVersions: List<String>,
-    val requiresFreshP0Session: Boolean,
-    val routePolicy: ExploitRoutePolicy,
+    // The feed's policy and fresh-session fields are deliberately not carried: see [TargetProfile]. A cache
+    // written before that had them still opens - the reads below ignore the keys rather than requiring them.
     val exploit: RemoteArtifact,
     val kernelSu: RemoteArtifact,
     /**
@@ -89,8 +89,6 @@ internal data class CachedPayload(
         put("displayName", displayName)
         put("models", JSONArray(models))
         put("kernelVersions", JSONArray(kernelVersions))
-        put("requiresFreshP0Session", requiresFreshP0Session)
-        put("routePolicy", routePolicy.toJsonObject())
         put("exploit", exploit.toJson())
         put("kernelSu", kernelSu.toJson())
         put("flavor", flavor.id)
@@ -108,8 +106,6 @@ internal data class CachedPayload(
         displayName = displayName,
         models = models.toSet(),
         kernelVersions = kernelVersions.toSet(),
-        requiresFreshP0Session = requiresFreshP0Session,
-        routePolicy = routePolicy,
         exploit = exploit,
         kernelSu = kernelSu,
         flavor = flavor,
@@ -128,8 +124,6 @@ internal data class CachedPayload(
                 displayName = json.getString("displayName"),
                 models = json.getJSONArray("models").strings(),
                 kernelVersions = json.getJSONArray("kernelVersions").strings(),
-                requiresFreshP0Session = json.optBoolean("requiresFreshP0Session", false),
-                routePolicy = ExploitRoutePolicy.parse(json.optJSONObject("routePolicy")),
                 exploit = json.getJSONObject("exploit").artifact(),
                 kernelSu = json.getJSONObject("kernelSu").artifact(),
                 // Absent in a cache written before flavours and source identity were recorded, which is
@@ -237,13 +231,11 @@ internal object KnownGoodPayloadStore {
      * to an exploit bound for this project's payload is the kernel panic this rule exists for.
      */
     fun daemon(context: Context): File? {
-        // The APK-bundled q7q payload is the explicit offline payload for this fork, so it wins on
-        // the phone/kernel it declares. A cache from a previous Online run is only the fallback.
         BundledPayload.daemon(context)?.let { return it }
         return runCatching {
-            val descriptor = usableDescriptor(context, null)
-            val file = File(directory(context, descriptor.id), KSUD)
-            file.takeIf { fileMatchesArtifact(it, descriptor.kernelSu) }
+            val cached = usableDescriptor(context, null)
+            val file = File(directory(context, cached.id), KSUD)
+            file.takeIf { fileMatchesArtifact(it, cached.kernelSu) }
         }.getOrNull()
     }
 
@@ -255,8 +247,6 @@ internal object KnownGoodPayloadStore {
      * so a run cannot get past this point and then find the files unusable.
      */
     fun profileFor(context: Context, requestedProfileId: String? = null): TargetProfile {
-        // With no explicit selection, Offline means this fork's built-in payload first. This avoids a
-        // previously downloaded Online target silently taking over a later Offline install.
         runCatching { BundledPayload.profileFor(context, requestedProfileId) }
             .getOrNull()
             ?.let { return it }
@@ -267,8 +257,6 @@ internal object KnownGoodPayloadStore {
      * Reads the cached payload, refusing anything that does not belong to this device and this build.
      */
     fun load(context: Context, requestedProfileId: String? = null): VerifiedPayloads {
-        // The built-in q7q pair is the explicit Offline payload. Prefer it whenever this phone matches;
-        // only fall back to a cache produced by an earlier Online run when the bundle does not apply.
         runCatching { BundledPayload.load(context, requestedProfileId) }
             .getOrNull()
             ?.let { return it }
@@ -337,8 +325,6 @@ internal object KnownGoodPayloadStore {
             displayName = profile.displayName,
             models = profile.models.toList(),
             kernelVersions = profile.kernelVersions.toList(),
-            requiresFreshP0Session = profile.requiresFreshP0Session,
-            routePolicy = profile.routePolicy,
             exploit = profile.exploit,
             kernelSu = profile.kernelSu,
             flavor = profile.flavor,

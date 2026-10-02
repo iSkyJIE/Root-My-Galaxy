@@ -46,7 +46,7 @@ class StageTwoIdentityTest {
     fun `the helper is named as this project's helper wherever a user sees it`() {
         assertEquals(
             "the label a launcher and the installer show is not this project's name for the helper",
-            "Root Galaxy XP Helper",
+            "Root My Galaxy XP Helper",
             labelIn(helperManifest()),
         )
     }

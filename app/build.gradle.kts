@@ -93,7 +93,7 @@ android {
         // action string, both provider authorities and the R class, and moving it would touch the
         // whole tree to change nothing anyone can see - the id below is the install's identity, and it
         // is the only one Android checks.
-        applicationId = "dev.theskyjie.xproot"
+        applicationId = "dev.rootmygalaxy.rmgxp"
         minSdk = 33
         targetSdk = 36
         versionCode = appVersionCode

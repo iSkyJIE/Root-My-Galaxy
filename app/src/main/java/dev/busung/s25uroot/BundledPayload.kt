@@ -5,7 +5,7 @@ import android.system.Os
 import java.io.File
 import java.io.FileOutputStream
 
-/** Immutable q7q payload carried inside Root Galaxy XP for first-run offline use. */
+/** Immutable q7q payload carried inside Root My Galaxy XP for first-run offline use. */
 internal object BundledPayload {
     const val PROFILE_ID = "q7q-F966USQU9BZDN"
     private const val ASSET_PREFIX = "asset://"
@@ -28,7 +28,7 @@ internal object BundledPayload {
             size = 6_407_096,
             sha256 = "fa3edcc7d168637394877b30cb1f909d762dda788ec14051f4ae79edd6562d63",
         ),
-        sourceLabel = "Root Galaxy XP built-in",
+        sourceLabel = "Root My Galaxy XP built-in",
     )
 
     fun isAsset(artifact: RemoteArtifact): Boolean = artifact.url.startsWith(ASSET_PREFIX)

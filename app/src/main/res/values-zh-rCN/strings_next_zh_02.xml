@@ -86,6 +86,10 @@
     <string name="universal_step_exploit">内核漏洞利用</string>
     <string name="universal_step_load">加载 KernelSU</string>
     <string name="universal_installed">已 Root：KernelSU 已在本次开机中生效。</string>
+    <string name="action_open_manager">打开管理器</string>
+    <string name="universal_confirm_in_manager">打开 %1$s 管理器确认 Root 已生效；在此界面执行软重启可让 KernelSU 模块进入 Zygote。</string>
+    <string name="universal_installed_unverified">已 Root：利用链各步骤均已完成。当前设备不允许普通应用直接确认 Root，请打开 KernelSU 管理器查看。</string>
+    <string name="universal_steps_landed">利用链各步骤均已完成：两个补丁均已验证，守护进程也已启动。当前设备不允许普通应用直接确认 Root，因此本次运行按“已 Root、未验证”报告；请打开 KernelSU 管理器确认。</string>
     <string name="universal_no_device">无法读取设备信息，因此未执行任何操作。</string>
     <string name="universal_wrong_abi">此漏洞利用仅支持 arm64，而此手机显示为 %1$s。</string>
     <string name="universal_already_armed">本次开机已经设置过 Hook。再次运行 %1$s 前请先重启；漏洞利用会设置一个只有重启才能清除的标记。</string>

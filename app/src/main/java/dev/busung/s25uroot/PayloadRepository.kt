@@ -695,7 +695,7 @@ class PayloadRepository(private val context: Context) {
             connectTimeout = 15_000
             readTimeout = 60_000
             instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "RootGalaxyXP/${BuildConfig.VERSION_NAME}")
+            setRequestProperty("User-Agent", "RootMyGalaxyXP/${BuildConfig.VERSION_NAME}")
             accept?.let { setRequestProperty("Accept", it) }
             connect()
             require(responseCode == HttpURLConnection.HTTP_OK) {

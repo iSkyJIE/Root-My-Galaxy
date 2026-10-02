@@ -14,7 +14,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "RootGalaxyXP"
+rootProject.name = "RootMyGalaxyXP"
 include(":app")
 
 // The second APK of the Dirty Frag flow. It is a module of its own rather than a flavour of :app

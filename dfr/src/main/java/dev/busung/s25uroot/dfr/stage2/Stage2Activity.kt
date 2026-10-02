@@ -52,7 +52,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * ## What is on the screen, and what is in the log
  *
  * Four actions, and they are the four things that are worth doing from here: **Run**, which is the one that
- * costs the boot; **Open Manager**, which is the app that can act on the root this loaded; **Open Root Galaxy XP**,
+ * costs the boot; **Open Manager**, which is the app that can act on the root this loaded; **Open Root My Galaxy XP**,
  * which owns the boot settings; and **Soft reboot**, which is the userspace restart a loaded KernelSU needs
  * before it does anything. Everything else this screen used to say - the process identity, the hook and
  * daemon readings, the manager table, the setting behind the launch - is read into the log instead and stays
@@ -669,7 +669,7 @@ class Stage2Activity : Activity() {
 
     private fun copyLog() {
         val clipboard = getSystemService(ClipboardManager::class.java) ?: return
-        clipboard.setPrimaryClip(ClipData.newPlainText("Root Galaxy XP helper log", logView.text))
+        clipboard.setPrimaryClip(ClipData.newPlainText("Root My Galaxy XP helper log", logView.text))
     }
 
     // ------------------------------------------------------------------------------- the view itself
@@ -680,7 +680,7 @@ class Stage2Activity : Activity() {
             setPadding(dip(20), dip(20), dip(20), dip(28))
             setBackgroundColor(palette.surface)
         }
-        column.addView(text("Root Galaxy XP Helper", 32f, palette.onSurface, Typeface.DEFAULT))
+        column.addView(text("Root My Galaxy XP Helper", 32f, palette.onSurface, Typeface.DEFAULT))
 
         stateView = pill("Ready")
         summaryView = text("", 13f, palette.onSurfaceVariant, Typeface.DEFAULT, 10)
@@ -719,7 +719,7 @@ class Stage2Activity : Activity() {
         openManagerButton = answer("Open Manager", loud = false).apply {
             setOnClickListener { openManager() }
         }
-        openAppButton = answer("Open Root Galaxy XP", loud = false).apply {
+        openAppButton = answer("Open Root My Galaxy XP", loud = false).apply {
             setOnClickListener { openTheApp() }
         }
         softRebootButton = answer("Soft reboot", loud = false).apply {
@@ -839,7 +839,7 @@ class Stage2Activity : Activity() {
     private fun openTheApp() {
         val launch = packageManager.getLaunchIntentForPackage(MAIN_PACKAGE)
         if (launch == null) {
-            summaryView.text = "Root Galaxy XP is not installed under $MAIN_PACKAGE"
+            summaryView.text = "Root My Galaxy XP is not installed under $MAIN_PACKAGE"
             summaryView.setTextColor(palette.error)
             return
         }
@@ -1010,7 +1010,7 @@ class Stage2Activity : Activity() {
          * app that answers them - so the name is held to the app's own build file by
          * `StageTwoIdentityTest`, which reads both.
          */
-        const val MAIN_PACKAGE = "dev.theskyjie.xproot"
+        const val MAIN_PACKAGE = "dev.rootmygalaxy.rmgxp"
 
         /** Enough for the hop and the first report; the run itself is not time-limited after that. */
         const val CONTROLLER_TIMEOUT_MS = 30_000L

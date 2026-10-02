@@ -601,6 +601,27 @@ private fun InstallScreen(
                                     // userspace restart is what puts them there, and asking for it from the
                                     // screen that just finished is the moment the user is thinking about it.
                                     if (installState.phase == InstallPhase.Installed) {
+                                        // A root this run reported without being able to read it: the manager is
+                                        // where it can be seen, so opening the one for the flavour that was
+                                        // loaded is the loud answer of this row. The restart beside it is still
+                                        // offered and is still what puts the freshly mounted modules into a
+                                        // Zygote, but a person who has not seen the root yet needs the place it
+                                        // can be seen first - and there is one Priority per row, so the restart
+                                        // steps down only when this is here.
+                                        val manager = installState.unverifiedRootManager
+                                        if (manager != null) {
+                                            val context = LocalContext.current
+                                            AppActionButton(
+                                                AppAction(
+                                                    label = R.string.action_open_manager,
+                                                    role = AppActionRole.Priority,
+                                                ) {
+                                                    clickHaptic(view)
+                                                    KernelSuManager.open(context, manager) { }
+                                                },
+                                                Modifier.weight(1f),
+                                            )
+                                        }
                                         RecoveryActionButton(
                                             tool = RecoveryTool.SoftReboot,
                                             // The label, not the sentence: the answer button resolves its
@@ -613,7 +634,11 @@ private fun InstallScreen(
                                             // so leaving both quiet made the row two equally optional things
                                             // and the step that completes the job indistinguishable from the
                                             // way out.
-                                            role = AppActionRole.Priority,
+                                            role = if (manager == null) {
+                                                AppActionRole.Priority
+                                            } else {
+                                                AppActionRole.Standard
+                                            },
                                             modifier = Modifier.weight(1f),
                                             onOpenSetting = onOpenSetting,
                                         )
