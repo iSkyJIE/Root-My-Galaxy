@@ -216,12 +216,10 @@ internal object KnownGoodPayloadStore {
     const val ROOT_HELPER_LIBRARY = "libcve43499root.so"
 
     fun hasValid(context: Context): Boolean =
-        runCatching {
+        BundledPayload.isAvailable(context) || runCatching {
             usableDescriptor(context, null)
             true
-        }.getOrElse {
-            BundledPayload.isAvailable(context)
-        }
+        }.getOrDefault(false)
 
     /** What is cached, for a settings row that has to say whether there is anything to fall back on. */
     fun describe(context: Context): CachedPayload? = runCatching { descriptor(context) }.getOrNull()
@@ -239,12 +237,14 @@ internal object KnownGoodPayloadStore {
      * to an exploit bound for this project's payload is the kernel panic this rule exists for.
      */
     fun daemon(context: Context): File? {
-        val cached = runCatching {
+        // The APK-bundled q7q payload is the explicit offline payload for this fork, so it wins on
+        // the phone/kernel it declares. A cache from a previous Online run is only the fallback.
+        BundledPayload.daemon(context)?.let { return it }
+        return runCatching {
             val descriptor = usableDescriptor(context, null)
             val file = File(directory(context, descriptor.id), KSUD)
             file.takeIf { fileMatchesArtifact(it, descriptor.kernelSu) }
         }.getOrNull()
-        return cached ?: BundledPayload.daemon(context)
     }
 
     /**
@@ -255,35 +255,38 @@ internal object KnownGoodPayloadStore {
      * so a run cannot get past this point and then find the files unusable.
      */
     fun profileFor(context: Context, requestedProfileId: String? = null): TargetProfile {
-        val cached = runCatching {
-            usableDescriptor(context, requestedProfileId).profile()
-        }.getOrNull()
-        return cached ?: BundledPayload.profileFor(context, requestedProfileId)
+        // With no explicit selection, Offline means this fork's built-in payload first. This avoids a
+        // previously downloaded Online target silently taking over a later Offline install.
+        runCatching { BundledPayload.profileFor(context, requestedProfileId) }
+            .getOrNull()
+            ?.let { return it }
+        return usableDescriptor(context, requestedProfileId).profile()
     }
 
     /**
      * Reads the cached payload, refusing anything that does not belong to this device and this build.
      */
     fun load(context: Context, requestedProfileId: String? = null): VerifiedPayloads {
-        val cachedPayload = runCatching {
-            val cached = usableDescriptor(context, requestedProfileId)
-            val directory = directory(context, cached.id)
-            val exploit = File(directory, EXPLOIT)
-            val kernelSu = File(directory, KSUD)
-            require(fileMatchesArtifact(exploit, cached.exploit)) {
-                context.getString(R.string.offline_cached_artifact_invalid, exploit.name)
-            }
-            require(fileMatchesArtifact(kernelSu, cached.kernelSu)) {
-                context.getString(R.string.offline_cached_artifact_invalid, kernelSu.name)
-            }
-            Os.chmod(exploit.absolutePath, 0b100100100)
-            Os.chmod(kernelSu.absolutePath, 0b100100100)
-            rememberResolvedPayload(context, cached.profile())
-            VerifiedPayloads(cached.profile(), exploit, kernelSu, PayloadOrigin.Cached)
-        }.getOrNull()
-        // A verified cache remains first choice. The immutable APK bundle is the fallback only for
-        // the one model/kernel pair it explicitly declares.
-        return cachedPayload ?: BundledPayload.load(context, requestedProfileId)
+        // The built-in q7q pair is the explicit Offline payload. Prefer it whenever this phone matches;
+        // only fall back to a cache produced by an earlier Online run when the bundle does not apply.
+        runCatching { BundledPayload.load(context, requestedProfileId) }
+            .getOrNull()
+            ?.let { return it }
+
+        val cached = usableDescriptor(context, requestedProfileId)
+        val directory = directory(context, cached.id)
+        val exploit = File(directory, EXPLOIT)
+        val kernelSu = File(directory, KSUD)
+        require(fileMatchesArtifact(exploit, cached.exploit)) {
+            context.getString(R.string.offline_cached_artifact_invalid, exploit.name)
+        }
+        require(fileMatchesArtifact(kernelSu, cached.kernelSu)) {
+            context.getString(R.string.offline_cached_artifact_invalid, kernelSu.name)
+        }
+        Os.chmod(exploit.absolutePath, 0b100100100)
+        Os.chmod(kernelSu.absolutePath, 0b100100100)
+        rememberResolvedPayload(context, cached.profile())
+        return VerifiedPayloads(cached.profile(), exploit, kernelSu, PayloadOrigin.Cached)
     }
 
     /**

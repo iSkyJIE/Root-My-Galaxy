@@ -1095,7 +1095,7 @@ private fun RootApp(
         // avoid, and an offline plan that named some other target's source would be a plan about
         // another app's run.
         val resolved = if (payloadMode == PayloadMode.Offline) {
-            cachedPayload?.profile() ?: bundledOfflineProfile
+            bundledOfflineProfile ?: cachedPayload?.profile()
         } else {
             targetCatalog.profiles.resolveFor(device)
         }
@@ -1522,8 +1522,31 @@ private fun RootApp(
                             // rather than asking for it a second time.
                             onInstall = {
                                 selectedProfile = null
-                                showTargetPicker = true
-                                installViewModel.loadTargetCatalog()
+                                if (payloadMode == PayloadMode.Offline) {
+                                    // Offline never opens the network catalog. Resolve the saved/bundled
+                                    // payload itself and confirm that exact profile.
+                                    scope.launch {
+                                        val profile = withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                KnownGoodPayloadStore.profileFor(context)
+                                            }.getOrNull()
+                                        }
+                                        if (profile == null) {
+                                            // Let the install screen report the existing "no saved payload"
+                                            // failure instead of silently switching back to Online.
+                                            openInstaller(null)
+                                        } else {
+                                            selectedProfile = profile
+                                            rememberResolvedPayload(context, profile)
+                                            onPayloadFlavorResolved(profile.flavor)
+                                            compatibilityWarning = null
+                                            confirming = PayloadChoice.Device(profile)
+                                        }
+                                    }
+                                } else {
+                                    showTargetPicker = true
+                                    installViewModel.loadTargetCatalog()
+                                }
                             },
                         )
                         AppPage.History -> HistoryPage(
@@ -5097,10 +5120,10 @@ private fun SettingsPage(
                     // so it took both lines the value is allowed and left the description a column
                     // two words wide. The name says which device this is cached for, and the id is
                     // still stated in full in the dialog, which is where a precise string belongs.
-                    value = cached?.displayName?.takeIf { it.isNotBlank() }
-                        ?: cached?.profileId
-                        ?: bundled?.displayName?.takeIf { it.isNotBlank() }
+                    value = bundled?.displayName?.takeIf { it.isNotBlank() }
                         ?: bundled?.profileId
+                        ?: cached?.displayName?.takeIf { it.isNotBlank() }
+                        ?: cached?.profileId
                         ?: stringResource(R.string.settings_cached_payload_none),
                     position = SettingsCardPosition.Middle,
                     onClick = {
@@ -7646,7 +7669,7 @@ private fun CachedPayloadDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                val saved = cached?.profile() ?: bundled
+                val saved = bundled ?: cached?.profile()
                 if (saved == null) {
                     Text(stringResource(R.string.settings_cached_payload_none))
                 } else {
