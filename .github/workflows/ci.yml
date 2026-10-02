@@ -63,22 +63,61 @@ jobs:
           KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
           if [ -n "${KEYSTORE_BASE64:-}" ] && [ -n "${KEYSTORE_PASSWORD_SECRET:-}" ] && \
              [ -n "${KEY_ALIAS_SECRET:-}" ] && [ -n "${KEY_PASSWORD_SECRET:-}" ]; then
-            NORMALIZED_KEYSTORE="$(printf '%s' "$KEYSTORE_BASE64" | tr -d '\\r\\n\\t ' | sed -E 's#^data:[^,]*,##' | tr '_-' '/+')"
-            case $((${#NORMALIZED_KEYSTORE} % 4)) in
+            KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD_SECRET"
+            KEY_ALIAS="$KEY_ALIAS_SECRET"
+            KEY_PASSWORD="$KEY_PASSWORD_SECRET"
+
+            NORMALIZED_KEYSTORE="$(printf '%s' "$KEYSTORE_BASE64" | tr -d '\r\n\t ' | sed -E 's#^data:[^,]*,##' | tr '_-' '/+')"
+            case $(("${#NORMALIZED_KEYSTORE}" % 4)) in
               2) NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE}==" ;;
               3) NORMALIZED_KEYSTORE="${NORMALIZED_KEYSTORE}=" ;;
             esac
             printf '%s' "$NORMALIZED_KEYSTORE" | base64 -d > "$KEYSTORE_PATH"
-            test -s "$KEYSTORE_PATH"
-            KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD_SECRET"
-            KEY_ALIAS="$KEY_ALIAS_SECRET"
-            KEY_PASSWORD="$KEY_PASSWORD_SECRET"
+
+            detect_store_type() {
+              local candidate="$1"
+              if keytool -list -keystore "$candidate" -storepass "$KEYSTORE_PASSWORD" -storetype JKS >/dev/null 2>&1; then
+                printf '%s' JKS
+                return 0
+              fi
+              if keytool -list -keystore "$candidate" -storepass "$KEYSTORE_PASSWORD" -storetype PKCS12 >/dev/null 2>&1; then
+                printf '%s' PKCS12
+                return 0
+              fi
+              return 1
+            }
+
+            KEYSTORE_TYPE="$(detect_store_type "$KEYSTORE_PATH" || true)"
+            if [ -z "$KEYSTORE_TYPE" ]; then
+              SECOND="$RUNNER_TEMP/release-second-decode"
+              SECOND_TEXT="$(tr -d '\r\n\t ' < "$KEYSTORE_PATH" | tr '_-' '/+')"
+              case $(("${#SECOND_TEXT}" % 4)) in
+                2) SECOND_TEXT="${SECOND_TEXT}==" ;;
+                3) SECOND_TEXT="${SECOND_TEXT}=" ;;
+              esac
+              if printf '%s' "$SECOND_TEXT" | base64 -d > "$SECOND" 2>/dev/null; then
+                SECOND_TYPE="$(detect_store_type "$SECOND" || true)"
+                if [ -n "$SECOND_TYPE" ]; then
+                  mv "$SECOND" "$KEYSTORE_PATH"
+                  KEYSTORE_TYPE="$SECOND_TYPE"
+                fi
+              fi
+              rm -f "$SECOND"
+            fi
+
+            if [ -z "$KEYSTORE_TYPE" ]; then
+              echo "::error::The configured owner keystore is still not readable with the configured store password."
+              exit 1
+            fi
+            keytool -list -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" -storetype "$KEYSTORE_TYPE" -alias "$KEY_ALIAS" >/dev/null
+            echo "Owner signing keystore validated ($KEYSTORE_TYPE)."
             echo "ephemeral=false" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::Release signing secrets are not configured; using an ephemeral CI-only key."
             KEYSTORE_PASSWORD="android"
             KEY_ALIAS="ci-test"
             KEY_PASSWORD="android"
+            KEYSTORE_TYPE="PKCS12"
             keytool -genkeypair -noprompt \
               -keystore "$KEYSTORE_PATH" \
               -storetype "$KEYSTORE_TYPE" \
@@ -94,6 +133,7 @@ jobs:
 
           {
             echo "KEYSTORE_FILE=$KEYSTORE_PATH"
+            echo "KEYSTORE_TYPE=$KEYSTORE_TYPE"
             echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
             echo "KEY_ALIAS=$KEY_ALIAS"
             echo "KEY_PASSWORD=$KEY_PASSWORD"
