@@ -109,13 +109,39 @@ internal object UniversalRootRun {
      */
     private const val SU_PATH = "/system/bin/su"
 
+    /**
+     * The chain's own markers, and DFRoot's names and meaning for them: the module's command ends with
+     * `touch /dev/dfm0` when the daemon it started returned, `touch /dev/dfm1` when it did not, and upstream's
+     * run reads exactly these two files to decide `***SUCCESS***` or `***FAILED***`.
+     *
+     * On this project's daemon the success marker cannot arrive - `late-load` renames the stage file onto
+     * `/data/adb/ksud` and *becomes* the KernelSU service, so the shell that would touch it does not survive to
+     * do it - and the failure marker can, which is why the failure one is worth reading: it is the chain saying
+     * it is over.
+     */
+    private const val MARKER_SUCCESS = "/dev/dfm0"
+
+    private const val MARKER_FAILURE = "/dev/dfm1"
+
+    /** How long a run waits for a root it cannot see yet, in milliseconds. */
+    internal const val LATE_ROOT_WINDOW_MILLIS = 120_000L
+
+    /** How often the phone is asked inside that window. */
+    internal const val LATE_ROOT_POLL_MILLIS = 1_000L
+
     /** What this app can actually read about whether the run worked. */
     internal sealed interface Reading {
         /** The kernel says so, through a channel an app can only read once root has been granted. */
         data object Live : Reading
 
+        /** The chain's own marker: the daemon it started returned. */
+        data object Marker : Reading
+
         /** The daemon completed: KernelSU's `su` is on the system partition. */
         data object SuInstalled : Reading
+
+        /** The chain's own marker says its command failed - there is nothing left to wait for. */
+        data object Failed : Reading
 
         /** Nothing readable confirms it. */
         data object Nothing : Reading
@@ -130,23 +156,120 @@ internal object UniversalRootRun {
      * not: it is a weaker claim and it is named as one, rather than being dressed up as the kernel's answer.
      */
     internal fun read(): Reading = when {
-        rootIsLive() -> Reading.Live
+        // The chain's own two markers first: a stat each, and the chain speaking rather than this app inferring.
+        // A failure marker is an answer in its own right - the run does not get better by waiting.
+        exists(MARKER_FAILURE) -> Reading.Failed
+        exists(MARKER_SUCCESS) -> Reading.Marker
+        // Then the kernel's own list, which is the earliest fact there is: the module appears when the daemon
+        // `insmod`s it, minutes before that daemon finishes installing `su` on a device with a metamodule and
+        // modules in the tree. [KernelSuRuntime.moduleLoaded] reads it directly when policy allows and through a
+        // running Shizuku when it does not - the shell domain can read it where an app domain cannot - and `null`
+        // there means it could not look, which is not an answer.
+        KernelSuRuntime.moduleLoaded() == true -> Reading.Live
         // Bytes, not existence. A run whose daemon found nothing to install itself from left a 0-byte
         // `/system/bin/su` on this device, and an existence test called that a completed daemon and reported
         // the boot as rooted.
         runCatching { File(SU_PATH).length() > 0 }.getOrDefault(false) -> Reading.SuInstalled
+        // Last, and most expensive: the native paths plus a `su` this app may not have been granted, which is a
+        // three-second timeout each time it answers nothing.
+        rootIsLive() -> Reading.Live
         else -> Reading.Nothing
     }
+
+    private fun exists(path: String): Boolean = runCatching { File(path).exists() }.getOrDefault(false)
 
     /** Whether KernelSU is live in this boot, asked of the kernel rather than of the chain. */
     internal fun rootIsLive(): Boolean = runCatching { RootStatusProbe.isActive() }.getOrDefault(false)
 
+    /**
+     * Whether this app can look at the kernel at all.
+     *
+     * One question with one implementation - [KernelSuRuntime.moduleLoaded]'s shell route - because that is the
+     * only reading a phone with no root grant does not hide: the module list is denied to app domains and
+     * readable from the shell, and `/system/bin/su` is not visible to an app either. Both were measured on this
+     * device with root live. So "can this app see root" is "is Shizuku running and has it granted this app",
+     * and it is what decides whether a run waits for a reading or reports the chain's own steps.
+     */
+    internal fun canReadTheKernel(): Boolean =
+        runCatching { ShizukuController.isRunning() && ShizukuController.isGranted() }.getOrDefault(false)
+
+    /**
+     * What a universal run came to.
+     *
+     * [Rooted] is a root this app read for itself. [RootedUnverified] is the case this flow has and no other
+     * does: every step the chain can report is in, and nothing here can see the result - so the steps are the
+     * evidence rather than a wait for an answer that cannot come. Reporting those runs as failures was the bug:
+     * a rooted phone was called unrooted on every run, because the wait can only ever expire.
+     */
+    internal enum class Verdict { Rooted, RootedUnverified, Failed }
+
+    /**
+     * The rule, with nothing of the device in it.
+     *
+     * [canRead] comes from [canReadTheKernel] and is the hinge: with a shell this app could look and did not
+     * find root, which is a failure; without one, nothing on this device can answer an app, and a chain whose
+     * patches landed and whose daemon started is as much as is knowable from here.
+     */
+    internal fun verdict(code: Int, reading: Reading, canRead: Boolean): Verdict = when {
+        reading == Reading.Failed -> Verdict.Failed
+        reading != Reading.Nothing -> Verdict.Rooted
+        !canRead && chainReachedTheDaemon(code) -> Verdict.RootedUnverified
+        else -> Verdict.Failed
+    }
+
+    /**
+     * Whether the chain's own account says it got as far as starting the daemon.
+     *
+     * `0` is "the patches applied and the daemon started"; `2` is "the daemon was started and I stopped waiting
+     * for it", which is the shape *every* run has here - successful ones included - because this daemon becomes
+     * the KernelSU service instead of returning. `1` and `3` are the failures: the daemon exited with an error,
+     * and the patches did not land.
+     */
+    internal fun chainReachedTheDaemon(code: Int): Boolean = code == 0 || code == 2
+
+    /**
+     * [read], repeated until the phone shows something or [windowMillis] has run out.
+     *
+     * Every parameter is one because the window is the whole point and a test has to be able to spend it in a
+     * millisecond: with a fake clock and a reader that answers on the fourth poll, this says whether a late root
+     * is reported as a root; with one that never answers, that the window is not a retry loop.
+     *
+     * A zero window is meaningful and used: with no way to look at the kernel, the wait has nothing to wait for
+     * (see [canReadTheKernel]), so the run reads once and its verdict is the chain's own account.
+     */
+    internal fun awaitRoot(
+        windowMillis: Long = LATE_ROOT_WINDOW_MILLIS,
+        pollMillis: Long = LATE_ROOT_POLL_MILLIS,
+        now: () -> Long = { System.currentTimeMillis() },
+        sleep: (Long) -> Unit = { Thread.sleep(it) },
+        read: () -> Reading = ::read,
+        report: (String) -> Unit = {},
+    ): Reading {
+        val deadline = now() + windowMillis
+        var polls = 0
+        while (true) {
+            val reading = read()
+            if (reading != Reading.Nothing) return reading
+            if (now() >= deadline) return reading
+            if (polls++ == 0) {
+                report(
+                    "waiting up to ${windowMillis / 1000}s for the phone to show the root it was just given: " +
+                        "the chain cannot report it, because the daemon it starts becomes the KernelSU service " +
+                        "and the shell that started it does not survive to write the chain's marker",
+                )
+            }
+            sleep(pollMillis)
+        }
+    }
+
     /** What a reading means, said the same way in the log and on the screen. */
     internal fun describeReading(reading: Reading): String = when (reading) {
         Reading.Live -> "KernelSU is live in this boot, read from the kernel"
-        Reading.SuInstalled ->
-            "KernelSU's su is installed at $SU_PATH, so the daemon completed. An app cannot read the kernel " +
-                "itself from here - open the manager to confirm and to grant this app root"
+        Reading.Marker -> "the chain's own marker ($MARKER_SUCCESS) says the daemon it started returned"
+        Reading.SuInstalled -> "KernelSU's su is installed at $SU_PATH, so the daemon completed"
+        Reading.Failed ->
+            "the chain's own marker ($MARKER_FAILURE) says its command failed - the daemon exited with an " +
+                "error, so this boot was not rooted by this run"
         Reading.Nothing -> "nothing readable on this phone confirms root"
     }
 
@@ -175,11 +298,16 @@ internal object UniversalRootRun {
      * is the difference between "the chain finished" and "this boot is rooted", which are two facts and only
      * one of them is the one a person cares about.
      */
-    internal fun rootCheck(code: Int): String {
-        if (code != 0) return "nothing to verify: the chain stopped before loading anything"
+    internal fun rootCheck(): String {
+        // No pre-judgement on the chain's code any more. It used to answer "nothing to verify: the chain stopped
+        // before loading anything" for every code but 0 - which is the code *every* run here has, successful
+        // ones included - so the line said the opposite of what the verdict then said. What the phone shows is
+        // what this line reports; what it means is [verdict]'s.
         return when (read()) {
             Reading.Live -> "checked the phone: KernelSU is live in this boot"
+            Reading.Marker -> "checked the phone: the chain's own marker says the daemon returned"
             Reading.SuInstalled -> "checked the phone: KernelSU's su is installed, so the daemon completed"
+            Reading.Failed -> "checked the phone: the chain's own marker says its command failed"
             Reading.Nothing ->
                 "checked the phone: nothing readable confirms root - no $SU_PATH, and an app cannot read " +
                     "the kernel. Read the steps above before believing this failed."
@@ -438,7 +566,7 @@ internal object UniversalRootRun {
             return Outcome.Refused("The chain could not start: ${error.javaClass.simpleName}: ${error.message}")
         }
         report(describe(code))
-        report(rootCheck(code))
+        report(rootCheck())
         return Outcome.Ran(code)
     }
 

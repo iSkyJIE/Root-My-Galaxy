@@ -54,8 +54,6 @@ internal object AttemptedPayloadStore {
             displayName = profile.displayName,
             models = profile.models.toList(),
             kernelVersions = profile.kernelVersions.toList(),
-            requiresFreshP0Session = profile.requiresFreshP0Session,
-            routePolicy = profile.routePolicy,
             exploit = profile.exploit,
             kernelSu = profile.kernelSu,
             flavor = profile.flavor,

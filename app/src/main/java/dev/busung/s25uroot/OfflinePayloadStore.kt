@@ -54,8 +54,8 @@ internal data class CachedPayload(
     val displayName: String,
     val models: List<String>,
     val kernelVersions: List<String>,
-    val requiresFreshP0Session: Boolean,
-    val routePolicy: ExploitRoutePolicy,
+    // The feed's policy and fresh-session fields are deliberately not carried: see [TargetProfile]. A cache
+    // written before that had them still opens - the reads below ignore the keys rather than requiring them.
     val exploit: RemoteArtifact,
     val kernelSu: RemoteArtifact,
     /**
@@ -89,8 +89,6 @@ internal data class CachedPayload(
         put("displayName", displayName)
         put("models", JSONArray(models))
         put("kernelVersions", JSONArray(kernelVersions))
-        put("requiresFreshP0Session", requiresFreshP0Session)
-        put("routePolicy", routePolicy.toJsonObject())
         put("exploit", exploit.toJson())
         put("kernelSu", kernelSu.toJson())
         put("flavor", flavor.id)
@@ -108,8 +106,6 @@ internal data class CachedPayload(
         displayName = displayName,
         models = models.toSet(),
         kernelVersions = kernelVersions.toSet(),
-        requiresFreshP0Session = requiresFreshP0Session,
-        routePolicy = routePolicy,
         exploit = exploit,
         kernelSu = kernelSu,
         flavor = flavor,
@@ -128,8 +124,6 @@ internal data class CachedPayload(
                 displayName = json.getString("displayName"),
                 models = json.getJSONArray("models").strings(),
                 kernelVersions = json.getJSONArray("kernelVersions").strings(),
-                requiresFreshP0Session = json.optBoolean("requiresFreshP0Session", false),
-                routePolicy = ExploitRoutePolicy.parse(json.optJSONObject("routePolicy")),
                 exploit = json.getJSONObject("exploit").artifact(),
                 kernelSu = json.getJSONObject("kernelSu").artifact(),
                 // Absent in a cache written before flavours and source identity were recorded, which is
@@ -325,8 +319,6 @@ internal object KnownGoodPayloadStore {
             displayName = profile.displayName,
             models = profile.models.toList(),
             kernelVersions = profile.kernelVersions.toList(),
-            requiresFreshP0Session = profile.requiresFreshP0Session,
-            routePolicy = profile.routePolicy,
             exploit = profile.exploit,
             kernelSu = profile.kernelSu,
             flavor = profile.flavor,

@@ -41,8 +41,6 @@ private fun cached(
     displayName = "Galaxy S25 series",
     models = models,
     kernelVersions = kernels,
-    requiresFreshP0Session = false,
-    routePolicy = ExploitRoutePolicy.LEGACY,
     exploit = RemoteArtifact(url = "https://example/exploit.so", size = 10, sha256 = EXPLOIT_SHA),
     kernelSu = RemoteArtifact(url = "https://example/ksud", size = 10, sha256 = KSUD_SHA),
     helperSha256 = helperSha256,
@@ -72,7 +70,6 @@ class OfflinePayloadStoreTest {
         val parsed = CachedPayload.parse(original.toJson())
 
         assertEquals(original, parsed)
-        assertEquals(original.routePolicy, parsed.routePolicy)
         assertEquals(original.exploit.sha256, parsed.exploit.sha256)
     }
 

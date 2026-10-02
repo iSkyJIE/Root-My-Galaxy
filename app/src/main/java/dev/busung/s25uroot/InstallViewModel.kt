@@ -91,6 +91,15 @@ data class InstallUiState(
      */
     val transportPrompt: TransportPrompt? = null,
     /**
+     * The flavour's manager, when a universal run reported a root this app could not read for itself.
+     *
+     * Set by the run rather than derived by the screen, because the screen cannot know what was verified: a
+     * verified root needs no confirmation, and an unverified one needs the manager named for the flavour that
+     * was actually loaded. The screen turns it into a way in - [KernelSuManager.open] - and into the suggestion
+     * that a soft restart is what puts KernelSU's modules into a Zygote.
+     */
+    val unverifiedRootManager: KernelSuFlavor? = null,
+    /**
      * Which of the two flows this run is - see [RunKind].
      *
      * Carried in the state because everything flow-specific is drawn or answered from it: the step list's
@@ -655,36 +664,65 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
             val code = (outcome as UniversalRootRun.Outcome.Ran).code
-            if (code != 0) {
-                // The chain's code is its own account of its own steps, and it is not the verdict. Its success
-                // test is "the daemon exited ok" within a fixed window, and this daemon does its work - module
-                // loaded, `su` installed - and then takes longer than that window to finish. So the phone is
-                // asked before the run is called a failure, and only a phone that shows nothing readable fails
-                // it. The chain's own account is still printed, because it names which step it stopped at.
-                val after = withContext(Dispatchers.IO) { UniversalRootRun.read() }
-                if (after == UniversalRootRun.Reading.Nothing) {
-                    failUniversal(UniversalStage.Chain, UniversalRootRun.describe(code))
-                    return@launch
-                }
-                appendLog("the chain reported: ${UniversalRootRun.describe(code)}")
-                appendLog(UniversalRootRun.describeReading(after))
-            }
+            // Whether this app can look at the kernel decides both how long the phone is asked and what silence
+            // means. With a shell, the module list answers seconds after the daemon `insmod`s it; without one,
+            // nothing an app can read on this device can tell - the module list is denied and `/system/bin/su`
+            // is not visible to an app domain - so the wait is skipped rather than spent on a question that
+            // cannot be answered. [UniversalRootRun.verdict] is the rule; this is only what it is told.
+            val canRead = withContext(Dispatchers.IO) { UniversalRootRun.canReadTheKernel() }
 
             // 4. Load KernelSU - and the reading that decides whether this run is a success. The chain's own
             //    `0` is its account of itself; the kernel is asked separately, because the two have already
             //    disagreed once on this device and the chain reported success while nothing was loaded.
             setPhase(InstallPhase.LoadingKernelSu, app.getString(R.string.universal_step_load))
-            // And the reading. This is the one part that has to differ from the payload flow: that one
-            // verifies through a shell it obtained on the way (Shizuku or the helper), and this path has
-            // none - which is why an app has to be told what it *can* read instead. See
-            // [UniversalRootRun.read]: the kernel is not readable from an app on this device, so the `su`
-            // the daemon installs is the signal that works.
-            val reading = withContext(Dispatchers.IO) { UniversalRootRun.read() }
-            if (reading == UniversalRootRun.Reading.Nothing) {
-                failUniversal(UniversalStage.Load, app.getString(R.string.universal_not_live))
-                return@launch
+            val reading = withContext(Dispatchers.IO) {
+                UniversalRootRun.awaitRoot(
+                    windowMillis = if (canRead) UniversalRootRun.LATE_ROOT_WINDOW_MILLIS else 0L,
+                ) { line -> appendLog(line) }
             }
-            appendLog(UniversalRootRun.describeReading(reading))
+            if (code != 0) {
+                // Printed whichever way the verdict goes: it names the step the chain stopped at.
+                appendLog("the chain reported: ${UniversalRootRun.describe(code)}")
+            }
+            // What the "installed" line says depends on the verdict, and only on it: a verified root can be
+            // stated, and an unverified one has to point at the manager instead of claiming a reading nobody made.
+            var installedMessage = R.string.universal_installed
+            when (UniversalRootRun.verdict(code, reading, canRead)) {
+                UniversalRootRun.Verdict.Failed -> {
+                    appendLog(UniversalRootRun.describeReading(reading))
+                    if (code != 0) {
+                        failUniversal(UniversalStage.Chain, UniversalRootRun.describe(code))
+                    } else {
+                        failUniversal(UniversalStage.Load, app.getString(R.string.universal_not_live))
+                    }
+                    return@launch
+                }
+
+                UniversalRootRun.Verdict.RootedUnverified -> {
+                    // The case this flow has and no other does: every step is in, and no reading here can see
+                    // the result. Said out loud rather than dressed up as a verification.
+                    appendLog(UniversalRootRun.describeReading(reading))
+                    appendLog(app.getString(R.string.universal_steps_landed))
+                    appendLog(app.getString(R.string.universal_confirm_in_manager, plan.flavor.label))
+                    mutableState.value = mutableState.value.copy(unverifiedRootManager = plan.flavor)
+                    installedMessage = R.string.universal_installed_unverified
+                    AppLog.info(
+                        AppLogTags.KERNEL_SU,
+                        "Universal run: the chain's steps all landed, and root is not readable from this app " +
+                            "(no shell transport) - reported as rooted without a verification",
+                    )
+                }
+
+                UniversalRootRun.Verdict.Rooted -> {
+                    appendLog(UniversalRootRun.describeReading(reading))
+                    // Verified, so it is written down for the rest of this boot - DFRoot's own trick, and the
+                    // receipt this app already keeps for its payload flow: the slow fact is paid for once, when
+                    // it happens, and every later question reads a memento scoped to the boot instead of
+                    // deriving the answer again. [detectInstalled] is the reader, and it exists already.
+                    storeInstallReceipt()
+                }
+            }
+
             // The app's KernelSU flavour setting is deliberately **not** written here. That setting is the
             // resolved payload's to decide - one writer, one source of truth - and a second one is exactly
             // the state that rule removed; `PayloadDecidesFlavorTest` holds it. It is also why a one-off
@@ -700,7 +738,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                         "says ${AppPreferences.kernelsuFlavor(app).label} - change it in Settings to match.",
                 )
             }
-            setPhase(InstallPhase.Installed, app.getString(R.string.universal_installed))
+            setPhase(InstallPhase.Installed, app.getString(installedMessage))
             endUniversalNotification()
 
             // The restart the payload flow has always asked for and this one never did.
@@ -712,15 +750,19 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             // this process is in the middle of, and refusing is a line in the log rather than a failure, since
             // the phone is already rooted by here.
             if (AppPreferences.restartAfterRoot(app)) {
-                appendLog(app.getString(R.string.log_restart_after_root))
+                val asked = app.getString(R.string.log_restart_after_root)
+                appendLog(asked)
                 val restart = runRecoveryAction(app, RecoveryTool.SoftReboot)
-                appendLog(
-                    if (restart.accepted) {
-                        app.getString(R.string.log_restart_after_root_accepted)
-                    } else {
-                        app.getString(R.string.log_restart_after_root_refused, restart.detail)
-                    },
-                )
+                val outcome = if (restart.accepted) {
+                    app.getString(R.string.log_restart_after_root_accepted)
+                } else {
+                    app.getString(R.string.log_restart_after_root_refused, restart.detail)
+                }
+                appendLog(outcome)
+                // And into the run's own record, which [endUniversalNotification] has already closed - see
+                // [appendFinishedLog]. Without this the restart's two lines lived on the screen and nowhere else,
+                // which is how a run could ask for a soft restart, be refused, and leave no trace of either.
+                appendFinishedLog(listOf(asked, outcome))
             }
         }
     }
@@ -1190,11 +1232,10 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 // own numbers unless the user opted to override them, with the fresh-session rule on
                 // top. The run-plan screen calls the same function with the same stored settings, so
                 // what this run enforces is what that screen said it would.
-                val routePolicy = ExploitOverride.resolve(
-                    policy = profile.routePolicy,
-                    override = AppPreferences.exploitOverride(app),
-                    freshSession = profile.requiresFreshP0Session,
-                )
+                // One policy for every profile, which is what the official app runs every profile with: a
+                // feed entry's own policy and fresh-session flag are no longer read (see [TargetProfile]),
+                // and the exploit override is no longer applied (see [ExploitOverride.resolve]).
+                val routePolicy = ExploitOverride.resolve(ExploitRoutePolicy.LEGACY)
                 // Said before anything is attempted, because the flavour is a property of the entry
                 // that was chosen and not of the app's setting: a catalog that carries only the other
                 // project's payloads serves that one, and the log is where that becomes visible.
@@ -1295,14 +1336,11 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 // Resolved here rather than read where each ceiling is enforced, so the whole run is
                 // held to one reading - and stated in the log, because a run cut off by a ceiling the
                 // user set should say so in the place a user looks for the reason.
-                activeCeilings = runCeilings(app, profile.requiresFreshP0Session)
+                // No fresh-session rule any more, so the ceilings are the ones the settings name.
+                activeCeilings = runCeilings(app, freshSession = false)
                 appendLog(
                     app.getString(
-                        if (profile.requiresFreshP0Session) {
-                            R.string.log_run_ceilings_fresh
-                        } else {
-                            R.string.log_run_ceilings
-                        },
+                        R.string.log_run_ceilings,
                         RunLimits.durationLabel(activeCeilings.totalMillis),
                         RunLimits.durationLabel(activeCeilings.stallMillis),
                         RunLimits.durationLabel(activeCeilings.helperMillis),
@@ -1379,7 +1417,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 appendLog(app.getString(R.string.log_payload_origin, payloads.origin.name.lowercase()))
                 executeExploit(
                     payloads,
-                    profile.requiresFreshP0Session,
+                    requiresFreshP0Session = false,
                     routePolicy.policy,
                 )
 
@@ -1765,9 +1803,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 helper.absolutePath,
                 logFile.absolutePath,
             ).redirectErrorStream(true)
-            processBuilder.environment().putAll(
-                exploitEnvironment(requiresFreshP0Session, cachedP0Offset, routePolicy),
-            )
+            processBuilder.environment().putAll(exploitEnvironment(cachedP0Offset))
             processBuilder.start()
         }
         val captured = StringBuilder()
@@ -2137,7 +2173,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
     ): String = buildString {
         // The environment comes first, quoted as values, because this is a shell command rather than
         // a process spawn with an environment attached.
-        exploitEnvironment(requiresFreshP0Session, cachedP0Offset, routePolicy).forEach { (name, value) ->
+        exploitEnvironment(cachedP0Offset).forEach { (name, value) ->
             append(name).append('=').append(shellQuote(value)).append(' ')
         }
         append(shellQuote(ADB_HELPER_PATH))
@@ -2184,7 +2220,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
         cachedP0Offset: String?,
         routePolicy: ExploitRoutePolicy,
     ): Array<String> = buildList {
-        exploitEnvironment(requiresFreshP0Session, cachedP0Offset, routePolicy).forEach { (name, value) ->
+        exploitEnvironment(cachedP0Offset).forEach { (name, value) ->
             add("$name=$value")
         }
         add("CVE43499_ROOT_HELPER=$helperPath")
@@ -2688,6 +2724,22 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
         activeHistoryEntry = null
     }
 
+    /**
+     * Adds lines to the run's own record after it has been closed.
+     *
+     * [appendLog] writes into the record only while [activeHistoryEntry] is set, and the universal flow closes
+     * its record - stamping the result and clearing that field - when it ends its notification, which is
+     * *before* the soft restart is asked for. So an action the run took after its result had no account of
+     * itself in the record: a soft restart that was refused looked exactly like a setting that was off.
+     */
+    private fun appendFinishedLog(lines: List<String>) {
+        val id = activeRunId ?: return
+        val entry = mutableHistory.value.firstOrNull { it.id == id } ?: return
+        val updated = entry.copy(log = (entry.log + "\n" + lines.joinToString("\n")).trim())
+        historyStore.save(updated)
+        publishHistory(updated)
+    }
+
     private fun publishHistory(entry: InstallHistoryEntry) {
         mutableHistory.value = (mutableHistory.value.filterNot { it.id == entry.id } + entry)
             .sortedByDescending(InstallHistoryEntry::startedAtMillis)
@@ -2727,6 +2779,24 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
         private const val ADB_HELPER_PATH = "/data/local/tmp/rmgnext-ksud-helper"
         private const val ADB_PAYLOAD_PATH = "/data/local/tmp/rmgnext-payload"
         private const val ADB_LOG_PATH = "/data/local/tmp/rmgnext-exploit.log"
+
+        /**
+         * The exploit's environment, spelled once, and identical to the official app's.
+         *
+         * Four values: how many attempts, how long one may take, how long its P0 stage may take, and the
+         * slide offset this boot already won. Everything else this app used to add - a slide route, a p0
+         * window base, a single attempt for a profile that asked for a fresh session - was a value the
+         * payload had never been validated with, and a wrong one is a run that dies instead of rooting.
+         * The official app sends these three numbers and no others, which is why they are spelled here
+         * rather than assembled from a feed entry or a setting.
+         */
+        private const val ATTEMPTS_ENV = "EXPLOIT_ATTEMPTS"
+        private const val P0_TIMEOUT_ENV = "P0_ATTEMPT_TIMEOUT_SEC"
+        private const val ATTEMPT_TIMEOUT_ENV = "EXPLOIT_ATTEMPT_TIMEOUT_SEC"
+        private const val EXPLOIT_ATTEMPTS = "24"
+        private const val P0_ATTEMPT_TIMEOUT_SEC = "45"
+        private const val EXPLOIT_ATTEMPT_TIMEOUT_SEC = "120"
+        internal const val P0_OFFSET_ENV = "SLIDE_P0_OFFSET"
 
         /**
          * Where the KernelSU daemon goes, whichever transport put it there.
@@ -2810,7 +2880,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
          * paths are part of it.
          */
         internal fun exploitPlan(
-            requiresFreshP0Session: Boolean,
+            @Suppress("UNUSED_PARAMETER") requiresFreshP0Session: Boolean,
             cachedP0Offset: String?,
             shizuku: Boolean,
             // Required, with no default: a default here would have to guess whether the run is a fresh
@@ -2824,7 +2894,9 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             // will not apply - and so a value chosen in the settings shows up in both.
             bootSettleSeconds = BootSettle.normalize(bootSettleSeconds),
             routePolicy = routePolicy,
-            environment = exploitEnvironment(requiresFreshP0Session, cachedP0Offset, routePolicy.policy),
+            // The environment no longer comes from the policy: see [exploitEnvironment]. The policy is still
+            // carried by the plan for its description of the run, which the run-plan screen shows.
+            environment = exploitEnvironment(cachedP0Offset),
             shizukuArguments = if (shizuku) {
                 mapOf(
                     "CVE43499_ROOT_HELPER" to SHIZUKU_HELPER_PATH,
@@ -2838,50 +2910,23 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             helperLimitMillis = ceilings.helperMillis,
         )
 
-        internal fun exploitEnvironment(
-            requiresFreshP0Session: Boolean,
-            cachedP0Offset: String?,
-            routePolicy: ExploitRoutePolicy = ExploitRoutePolicy.LEGACY,
-        ): Map<String, String> = buildMap {
-            // A fresh-session profile hands its pacing to the payload, so the policy's attempt and
-            // timeout budget does not apply to it. The route still does: which way the payload finds
-            // the slide is a different question from how many tries it gets.
-            put(
-                "EXPLOIT_ATTEMPTS",
-                if (requiresFreshP0Session) "1" else routePolicy.attempts.toString(),
-            )
-            if (!requiresFreshP0Session) {
-                put("P0_ATTEMPT_TIMEOUT_SEC", routePolicy.p0AttemptTimeoutSec.toString())
-                put("EXPLOIT_ATTEMPT_TIMEOUT_SEC", routePolicy.attemptTimeoutSec.toString())
-                if (routePolicy.p0OffsetCache) {
-                    cachedP0Offset?.let { put(ExploitRoutePolicy.P0_OFFSET_ENV, it) }
-                }
-            }
-            routePolicy.slideRoute.env?.let { put(ExploitRoutePolicy.SLIDE_SOURCE_ENV, it) }
-            // The p0 window's base, when the policy names one - which today means a user moved it in Run
-            // limits, since the feed carries no such field. This one is unlike the three above in a way
-            // worth stating: leaving it out is not "the payload decides", it is the payload forking every
-            // attempt with the supervisor's own base (20000 us), which is what every shipped target has
-            // ever run with and no profile can change.
-            routePolicy.p0WindowDelayUsec?.let {
-                put(ExploitRoutePolicy.P0_WINDOW_DELAY_ENV, it.toString())
-            }
-            // The offset this boot already won, when the feed's policy allows the hand-over. The
-            // payload treats a supplied offset as final and returns before it prepares the p0 pipe
-            // oracle, which is the entire p0 lottery skipped - the stage that has to be won attempt
-            // after attempt otherwise, and the reason the original app roots in minutes on a device
-            // this app cannot get past that stage on. It is bounded to this boot twice over: the cache
-            // is keyed by the boot token, and a fresh-session profile never reaches this line.
-            //
-            // The hand-over was removed on 2026-09-23 after nine runs handed 0x0f0000/0x180000 died at
-            // `phys step cache gate failed`, which was read as the supplied offset breaking the stage
-            // after it. The offset is not what that gate turns on. On 2026-09-25 the artifact the
-            // original app runs died there on its own scan attempt, with no offset handed to it, and
-            // then rooted on the attempt after that - handed the offset its own scan had just won,
-            // which is this hand-over. What the gate reads is a page, and a missed write window leaves
-            // that read coming back as `dead000000000100`; no cache choice fixes it, since this device
-            // has no `kmalloc-cg-*` cache at all and the artifact that reads the shared row matches the
-            // pipe page's own cache. Winning one lottery per boot is what this app does not want.
+        /**
+         * What the payload is handed, which is now exactly what the official app hands it.
+         *
+         * Four values and nothing else: how many attempts, how long one may take, how long its P0 stage may
+         * take, and the slide offset this boot already won. The rest of this map used to be assembled from a
+         * per-profile policy and a user override - a slide route, a p0 window base, an attempt budget of one
+         * for profiles that asked for a fresh session - and every one of those was a value the payload had
+         * never been validated with, arriving on the one path where being wrong is a run that dies instead of
+         * rooting. The official app has none of them, so neither does this: what it sends is [EXPLOIT_ATTEMPTS],
+         * [P0_ATTEMPT_TIMEOUT_SEC] and [EXPLOIT_ATTEMPT_TIMEOUT_SEC], plus [P0_OFFSET_ENV] when a cached
+         * offset exists for this boot.
+         */
+        internal fun exploitEnvironment(cachedP0Offset: String?): Map<String, String> = buildMap {
+            put(ATTEMPTS_ENV, EXPLOIT_ATTEMPTS)
+            put(P0_TIMEOUT_ENV, P0_ATTEMPT_TIMEOUT_SEC)
+            put(ATTEMPT_TIMEOUT_ENV, EXPLOIT_ATTEMPT_TIMEOUT_SEC)
+            cachedP0Offset?.let { put(P0_OFFSET_ENV, it) }
         }
 
         private fun stripAnsi(value: String): String = ANSI_ESCAPE.replace(value, "").replace("\r", "")

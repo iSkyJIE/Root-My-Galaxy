@@ -236,6 +236,9 @@
     <string name="universal_step_exploit">Kernel exploit</string>
     <string name="universal_step_load">Load KernelSU</string>
     <string name="universal_installed">Rooted : KernelSU is live in this boot.</string>
+    <string name="action_open_manager">Open manager</string>
+    <string name="universal_confirm_in_manager">Open the %1$s manager to see it live - and a soft restart from this screen is what puts KernelSU\'s modules into a Zygote.</string>
+    <string name="universal_installed_unverified">Rooted : the chain\'s steps all landed. Nothing on this phone lets an app see root, so open the KernelSU manager to see it live.</string>
     <string name="universal_no_device">This device could not be read, so nothing was done.</string>
     <string name="universal_wrong_abi">This exploit is arm64 only, and this phone shows %1$s.</string>
     <string name="universal_already_armed">This boot is already hooked. Reboot before running %1$s again : the exploit arms a marker only a reboot clears.</string>
@@ -243,6 +246,7 @@
     <!-- A boot run stages the daemon this phone already has, and that copy is checked first: it can be another
          flavour\'s or another tier\'s since, which is the mix-up the flavour exists to prevent. -->
     <string name="universal_cached_daemon_stale">The daemon staged on this phone is not the one its last run downloaded, so it cannot be staged again. Run the dirtyfrag root once with the network.</string>
+    <string name="universal_steps_landed">The chain\'s steps all landed: both patches verified and the daemon started. Nothing on this phone lets an app see root, so this run is reported as rooted without a verification - open the KernelSU manager to see it live.</string>
     <string name="universal_not_live">Nothing on this phone confirms root: no /system/bin/su, and an app cannot read the kernel. The chain finished, but this boot is not rooted.</string>
     <string name="dfr_dmc_fix">Keep Odin reachable</string>
     <string name="dfr_dmc_fix_detail">Writes Samsung\'s DMC setting on every boot, so download mode stays available on the firmware that locks it behind a lock screen. Needs the helper installed.</string>

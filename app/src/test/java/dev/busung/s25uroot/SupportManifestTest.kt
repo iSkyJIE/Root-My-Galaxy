@@ -66,13 +66,13 @@ class SupportManifestTest {
     }
 
     @Test
-    fun keepsTheFreshSessionFlagAndTheSizeEscapeHatch() {
+    fun ignoresThePolicyFieldsTheOfficialAppHasNoCounterpartFor() {
         val parsed = SupportManifest.parse(manifest)
 
-        // Both are per-payload opt-ins the app acts on, so a parse that dropped either would change
-        // how a run behaves without anyone editing the feed.
-        assertTrue(parsed.targets[0].requiresFreshP0Session)
-        assertFalse(parsed.targets[1].requiresFreshP0Session)
+        // The fixture still declares `requiresFreshP0Session` (and a route policy elsewhere in this file's
+        // feeds), and neither is read: the official app has no such fields, so acting on them would put a
+        // payload on numbers it was never validated with - one attempt with no budget at all, or a slide
+        // route of a feed's choosing. What is left is the size escape hatch, which is not a policy.
         assertFalse(parsed.targets[1].exploit.verifySize)
 
         // And the default stays strict for a payload that does not ask otherwise.

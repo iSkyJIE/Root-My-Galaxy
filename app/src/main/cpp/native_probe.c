@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <stdint.h>
@@ -155,6 +156,59 @@ Java_dev_busung_s25uroot_NativeProbe_run(JNIEnv *env, jobject thiz) {
                "/proc/sys/kernel/random/boot_id", O_RDONLY);
   append_probe(output, sizeof(output), "proc_self_mem", "/proc/self/mem",
                O_RDONLY);
+
+  /*
+   * What an app with no grant has left, reported read-only.
+   *
+   * KernelSU's own interface would answer "is root live" directly, but reaching it needs a `reboot` syscall
+   * - that is how the descriptor its ioctl goes to is installed - and Android's app seccomp filter makes
+   * syscall 142 fatal rather than refused: a probe that tried it took this process down with SIGSYS. So the
+   * kernel is asked only through files here: its own module list, which policy usually hides from app domains,
+   * and `/system/bin/su`, which is the daemon's work and readable by anyone the policy does not forbid.
+   * Measured on the device with root live: both are denied to an app, which is why the universal flow's
+   * verdict has to fall back to the chain's own steps when it has no shell.
+   */
+  {
+    errno = 0;
+    int modules_fd = open("/proc/modules", O_RDONLY | O_CLOEXEC);
+    int modules_errno = errno;
+    int module_lines = 0;
+    int names_kernelsu = 0;
+    if (modules_fd >= 0) {
+      char buffer[16384];
+      ssize_t count = read(modules_fd, buffer, sizeof(buffer) - 1);
+      close(modules_fd);
+      if (count > 0) {
+        buffer[count] = '\0';
+        for (const char *line = buffer; *line != '\0'; ++line) {
+          if (*line == '\n') {
+            ++module_lines;
+          }
+        }
+        names_kernelsu = strstr(buffer, "kernelsu") != NULL;
+      }
+    }
+    size_t used = strlen(output);
+    if (used < sizeof(output)) {
+      snprintf(output + used, sizeof(output) - used,
+               "proc_modules=%s errno=%d lines=%d kernelsu=%d\n",
+               modules_fd >= 0 ? "ok" : "denied", modules_errno, module_lines,
+               names_kernelsu);
+    }
+  }
+
+  {
+    struct stat su_stat;
+    errno = 0;
+    int su_found = stat("/system/bin/su", &su_stat) == 0;
+    int su_errno = errno;
+    size_t used = strlen(output);
+    if (used < sizeof(output)) {
+      snprintf(output + used, sizeof(output) - used,
+               "su_file=%s size=%lld errno=%d\n", su_found ? "ok" : "missing",
+               su_found ? (long long)su_stat.st_size : 0LL, su_errno);
+    }
+  }
 
   struct perf_event_attr perf_attr;
   memset(&perf_attr, 0, sizeof(perf_attr));

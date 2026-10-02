@@ -43,9 +43,18 @@ data class TargetProfile(
     val displayName: String,
     val models: Set<String>,
     val kernelVersions: Set<String>,
-    val requiresFreshP0Session: Boolean = false,
-    /** How this target wants its exploit run. Carried with the profile so every path uses it. */
-    val routePolicy: ExploitRoutePolicy = ExploitRoutePolicy.LEGACY,
+    /**
+     * The two fields the official app has no counterpart for, and which are deliberately gone from here.
+     *
+     * A feed entry used to be able to say `requiresFreshP0Session` (one attempt, no attempt budget at all)
+     * and to carry a `routePolicy` (attempts, both timeouts, whether the cached slide offset may be handed
+     * over, and the slide route and p0 window the payload is told to use). The official app reads neither,
+     * because its feed has neither - so a value from either one is a value the payload was never validated
+     * with, arriving on the one path where the difference is a run that dies instead of rooting.
+     *
+     * What is handed over now is what the official app hands over: [ExploitRoutePolicy.LEGACY]'
+     * numbers, spelled in [InstallViewModel]'s companion, and the cached offset when this boot has one.
+     */
     val exploit: RemoteArtifact,
     val kernelSu: RemoteArtifact,
     /**
@@ -216,8 +225,6 @@ data class SupportManifest(
                             displayName = payload.getString("displayName"),
                             models = payload.getJSONArray("models").strings(),
                             kernelVersions = payload.getJSONArray("kernelVersions").strings(),
-                            requiresFreshP0Session = payload.optBoolean("requiresFreshP0Session", false),
-                            routePolicy = ExploitRoutePolicy.parse(payload.optJSONObject("routePolicy")),
                             exploit = exploit.artifact(),
                             kernelSu = kernelSu.artifact(),
                             kernelSuVersion = kernelSu.declaredVersion(),
