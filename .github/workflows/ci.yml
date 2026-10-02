@@ -50,25 +50,47 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Decode signing keystore
+      - name: Configure signing keystore
+        id: signing
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_PASSWORD_SECRET: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS_SECRET: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD_SECRET: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          : "${KEYSTORE_BASE64:?Repository secret KEYSTORE_BASE64 is not set}"
-          : "${KEYSTORE_PASSWORD:?Repository secret KEYSTORE_PASSWORD is not set}"
-          : "${KEY_ALIAS:?Repository secret KEY_ALIAS is not set}"
-          : "${KEY_PASSWORD:?Repository secret KEY_PASSWORD is not set}"
 
           KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
-          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+          if [ -n "${KEYSTORE_BASE64:-}" ] && [ -n "${KEYSTORE_PASSWORD_SECRET:-}" ] && \
+             [ -n "${KEY_ALIAS_SECRET:-}" ] && [ -n "${KEY_PASSWORD_SECRET:-}" ]; then
+            printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+            KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD_SECRET"
+            KEY_ALIAS="$KEY_ALIAS_SECRET"
+            KEY_PASSWORD="$KEY_PASSWORD_SECRET"
+            KEYSTORE_TYPE="PKCS12"
+            echo "ephemeral=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Release signing secrets are not configured; using an ephemeral CI-only key."
+            KEYSTORE_PASSWORD="android"
+            KEY_ALIAS="ci-test"
+            KEY_PASSWORD="android"
+            KEYSTORE_TYPE="PKCS12"
+            keytool -genkeypair -noprompt \
+              -keystore "$KEYSTORE_PATH" \
+              -storetype "$KEYSTORE_TYPE" \
+              -storepass "$KEYSTORE_PASSWORD" \
+              -keypass "$KEY_PASSWORD" \
+              -alias "$KEY_ALIAS" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 30 \
+              -dname "CN=Root My Galaxy CI, O=iSkyJIE, C=US"
+            echo "ephemeral=true" >> "$GITHUB_OUTPUT"
+          fi
 
           {
             echo "KEYSTORE_FILE=$KEYSTORE_PATH"
-            echo "KEYSTORE_TYPE=PKCS12"
+            echo "KEYSTORE_TYPE=$KEYSTORE_TYPE"
             echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
             echo "KEY_ALIAS=$KEY_ALIAS"
             echo "KEY_PASSWORD=$KEY_PASSWORD"
@@ -140,7 +162,7 @@ jobs:
             "ci-release/RootMyGalaxyNext-${VERSION_NAME}-ci${GITHUB_RUN_NUMBER}-debug.apk"
 
       - name: Publish pre-release
-        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/dev'
+        if: (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/dev') && steps.signing.outputs.ephemeral != 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
