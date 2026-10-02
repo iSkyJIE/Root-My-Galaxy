@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="logs_count">
+        <item quantity="one">%1$d 条日志</item>
+        <item quantity="other">%1$d 条日志</item>
+    </plurals>
+    <plurals name="history_run_count">
+        <item quantity="one">%1$d 次运行</item>
+        <item quantity="other">%1$d 次运行</item>
+    </plurals>
+    <plurals name="history_deleted">
+        <item quantity="one">已删除 %1$d 次运行</item>
+        <item quantity="other">已删除 %1$d 次运行</item>
+    </plurals>
+</resources>
